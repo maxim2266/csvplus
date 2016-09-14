@@ -1,0 +1,1179 @@
+/*
+Copyright (c) 2016, Maxim Konakov
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+package csvplus
+
+import (
+	"bytes"
+	"encoding/csv"
+	"errors"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"math"
+	"math/rand"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestRow(t *testing.T) {
+	row := Row{
+		"id":      "12345",
+		"Name":    "John",
+		"Surname": "Doe",
+	}
+
+	if !row.HasColumn("Name") || !row.HasColumn("Surname") || !row.HasColumn("id") {
+		t.Error("Failed HasColumn() test")
+		return
+	}
+
+	hdr := row.Header()
+
+	if len(hdr) != len(row) {
+		t.Error("Invalid header length:", len(hdr))
+		return
+	}
+
+	for _, name := range hdr {
+		if !row.HasColumn(name) {
+			t.Error("Column not found:", name)
+			return
+		}
+	}
+
+	if row.SafeGetValue("Name", "") != "John" || row.SafeGetValue("xxx", "@") != "@" {
+		t.Error("SafeGetValue() test failed")
+		return
+	}
+
+	if s := row.SelectExisting("Name", "xxx").String(); s != `{ "Name" : "John" }` {
+		t.Error("SafeSelect() test failed:", s)
+		return
+	}
+
+	if _, e := row.Select("xxx", "zzz"); e == nil || e.Error() != `Missing column "xxx"` {
+		t.Error("Select() test failed:", e)
+		return
+	}
+
+	if _, e := row.Select("id", "zzz"); e == nil || e.Error() != `Missing column "zzz"` {
+		t.Error("Select() test failed:", e)
+		return
+	}
+
+	if r, e := row.Select("id"); e != nil || r.String() != `{ "id" : "12345" }` {
+		t.Error("Select() test failed:", e, r.String())
+		return
+	}
+
+	if _, e := row.SelectValues("id", "xxx"); e == nil || e.Error() != `Missing column "xxx"` {
+		t.Error("SelectValues() test failed:", e)
+		return
+	}
+
+	l, e := row.SelectValues("id", "Name")
+
+	if e != nil || len(l) != 2 || l[0] != "12345" || l[1] != "John" {
+		t.Error("SelectValues() test failed:", l, e)
+		return
+	}
+
+	if s := row.String(); s != `{ "Name" : "John", "Surname" : "Doe", "id" : "12345" }` {
+		t.Error("String() test failed:", s)
+		return
+	}
+}
+
+func TestSimpleDataSource(t *testing.T) {
+	var n int
+
+	hdr := sortedCopy(peopleHeader)
+	src := CsvFileDataSource(tempFiles["people"]).SelectColumns(hdr...)
+	err := Take(src).
+		Filter(Any(Like(Row{"name": "Jack"}), Like(Row{"name": "Amelia"}))).
+		ForEach(func(row Row) error {
+			if name := row.SafeGetValue("name", ""); name != "Jack" && name != "Amelia" {
+				return errors.New("Unexpected name: " + name)
+			}
+
+			if len(row) != 4 {
+				return fmt.Errorf("Unexpected number of columns: %d", len(row))
+			}
+
+			for i, name := range row.Header() {
+				if hdr[i] != name {
+					return errors.New("Unexpected column name: " + name)
+				}
+			}
+
+			n++
+			return nil
+		})
+
+	if err != nil {
+		t.Error(err)
+		return
+	} else if n != len(peopleSurnames)*2 {
+		t.Error("Invalid number of rows:", n)
+		return
+	}
+}
+
+func TestWriteFile(t *testing.T) {
+	var tmpFileName string
+	var file1, file2 []byte
+
+	defer os.Remove(tmpFileName)
+
+	src := CsvFileDataSource(tempFiles["people"]).SelectColumns(peopleHeader...)
+
+	err := anyFrom(
+		func() (e error) { tmpFileName, e = createTempFile(); return },
+		func() (e error) { e = Take(src).ToCsvFile(tmpFileName, peopleHeader...); return },
+		func() (e error) { file1, e = ioutil.ReadFile(tmpFileName); return },
+		func() (e error) { file2, e = ioutil.ReadFile(tempFiles["people"]); return },
+	)
+
+	if err == nil {
+		if bytes.Compare(bytes.TrimSpace(file1), bytes.TrimSpace(file2)) != 0 {
+			t.Error("Files do not match")
+			return
+		}
+	} else {
+		t.Error(err)
+		return
+	}
+}
+
+func TestIndexImpl(t *testing.T) {
+	index := indexImpl{
+		columns: []string{"x", "y", "z"},
+		rows: []Row{
+			{"x": "1", "y": "2", "z": "3", "junk": "zzz"},
+			{"x": "5", "y": "6", "z": "8", "junk": "nnn"},
+			{"x": "0", "y": "5", "z": "3", "junk": "xxx"},
+			{"x": "8", "y": "9", "z": "1", "junk": "aaa"},
+			{"x": "7", "y": "4", "z": "0", "junk": "bbb"},
+			{"x": "5", "y": "6", "z": "9", "junk": "iii"},
+			{"x": "2", "y": "6", "z": "7", "junk": "mmm"},
+		},
+	}
+
+	sort.Sort(&index)
+
+	rows := index.find([]string{"1", "2", "3"})
+
+	if len(rows) != 1 ||
+		rows[0].SafeGetValue("x", "") != "1" ||
+		rows[0].SafeGetValue("y", "") != "2" ||
+		rows[0].SafeGetValue("z", "") != "3" ||
+		rows[0].SafeGetValue("junk", "") != "zzz" {
+		t.Errorf("Bad rows: %v", rows)
+		return
+	}
+
+	rows = index.find([]string{"5", "6", "8"})
+
+	if len(rows) != 1 ||
+		rows[0].SafeGetValue("x", "") != "5" ||
+		rows[0].SafeGetValue("y", "") != "6" ||
+		rows[0].SafeGetValue("z", "") != "8" ||
+		rows[0].SafeGetValue("junk", "") != "nnn" {
+		t.Errorf("Bad rows: %v", rows)
+		return
+	}
+
+	rows = index.find([]string{"5", "6"})
+
+	if len(rows) != 2 ||
+		rows[0].SafeGetValue("x", "") != "5" ||
+		rows[0].SafeGetValue("y", "") != "6" ||
+		rows[1].SafeGetValue("x", "") != "5" ||
+		rows[1].SafeGetValue("y", "") != "6" {
+		t.Errorf("Bad rows: %v", rows)
+		return
+	}
+}
+
+func TestSimpleUniqueJoin(t *testing.T) {
+	people := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
+	orders := CsvFileDataSource(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "qty")
+
+	idIndex, err := Take(people).UniqueIndexOn("id")
+
+	if err != nil {
+		t.Errorf("Cannot create index: %s", err)
+		return
+	}
+
+	qtyMap := make([]int, len(peopleData))
+
+	err = idIndex.
+		Join(orders, "cust_id").
+		ForEach(func(row Row) (e error) {
+			var id, orderID, custID, qty int
+
+			if id, e = strconv.Atoi(row.SafeGetValue("id", "???")); e != nil {
+				return
+			}
+
+			if orderID, e = strconv.Atoi(row.SafeGetValue("order_id", "???")); e != nil {
+				return
+			}
+
+			if custID, e = strconv.Atoi(row.SafeGetValue("cust_id", "???")); e != nil {
+				return
+			}
+
+			if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+				return
+			}
+
+			if id >= len(peopleData) {
+				return fmt.Errorf("Invalid id: %d", id)
+			}
+
+			if peopleData[id].name != row.SafeGetValue("name", "") ||
+				peopleData[id].surname != row.SafeGetValue("surname", "") {
+				return fmt.Errorf("Invalid parameters associated with id %d", id)
+			}
+
+			if id != custID {
+				return fmt.Errorf("id = %d, cust_id = %d", id, custID)
+			}
+
+			if orderID >= numOrders {
+				return fmt.Errorf("Invalid order_id: %d", orderID)
+			}
+
+			if ordersData[orderID].custID != custID {
+				return fmt.Errorf("cust_id: got %d instead of %d", custID, ordersData[orderID].custID)
+			}
+
+			if ordersData[orderID].qty != qty {
+				return fmt.Errorf("qty: got %d instead of %d", qty, ordersData[orderID].qty)
+			}
+
+			if len(row) != 6 {
+				return fmt.Errorf("Invalid number of columns: %d", len(row))
+			}
+
+			qtyMap[id] += qty
+
+			return
+		})
+
+	if err != nil {
+		t.Errorf("Join failed: %s", err)
+		return
+	}
+
+	// check qty map
+	origMap := make([]int, len(peopleData))
+
+	for _, data := range ordersData {
+		origMap[data.custID] += data.qty
+	}
+
+	for i, qty := range qtyMap {
+		if qty != origMap[i] {
+			t.Errorf("qty for id %d: %d instead of %d", i, qty, origMap[i])
+			return
+		}
+	}
+}
+
+func TestSorted(t *testing.T) {
+	people := CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+		"name":    1,
+		"surname": 2,
+	})
+
+	// by name, surname
+	index, err := Take(people).UniqueIndexOn("name", "surname")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err = Take(index).Top(len(peopleSurnames)).ForEach(func(row Row) error {
+		if name := row.SafeGetValue("name", "???"); name != "Amelia" {
+			return errors.New("Unexpected name: " + name)
+		}
+
+		return nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// second name, DropWhile()
+	if err = Take(index).DropWhile(Like(Row{"name": "Amelia"})).Top(len(peopleSurnames)).ForEach(func(row Row) error {
+		if name := row.SafeGetValue("name", "???"); name != "Ava" {
+			return errors.New("Unexpected name: " + name)
+		}
+
+		return nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// by surname, name
+	index, err = Take(people).UniqueIndexOn("surname", "name")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// take second surname
+	if err = Take(index).Drop(len(peopleNames)).Top(len(peopleNames)).ForEach(func(row Row) error {
+		if surname := row.SafeGetValue("surname", "???"); surname != "Davies" {
+			return errors.New("Unexpected surname: " + surname)
+		}
+
+		return nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+}
+
+func TestSimpleTotals(t *testing.T) {
+	orders := CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")
+	products := CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")
+
+	prodIndex, err := Take(products).UniqueIndexOn("prod_id")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	totals := make([]float64, len(peopleData))
+
+	if err = prodIndex.Join(orders).ForEach(func(row Row) error {
+		var id, qty int
+		var e error
+
+		if id, e = strconv.Atoi(row.SafeGetValue("cust_id", "???")); e != nil {
+			return fmt.Errorf("cust_id: %s", e)
+		}
+
+		if id >= len(peopleData) {
+			return fmt.Errorf("Invalid id: %d", id)
+		}
+
+		if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+			return fmt.Errorf("qty: %s", e)
+		}
+
+		var price float64
+
+		if price, e = strconv.ParseFloat(row.SafeGetValue("price", "???"), 64); e != nil {
+			return fmt.Errorf("price: %s", e)
+		}
+
+		totals[id] = price * float64(qty)
+		return nil
+
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	origTotals := make([]float64, len(peopleData))
+
+	for _, order := range ordersData {
+		origTotals[order.custID] = stockItems[order.prodID].price * float64(order.qty)
+	}
+
+	for id, total := range totals {
+		if math.Abs((total-origTotals[id])/total) > 1e-6 {
+			t.Errorf("total for id %d: %f instead of %f", id, total, origTotals[id])
+			return
+		}
+	}
+}
+
+func TestMultiIndex(t *testing.T) {
+	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
+	index, err := Take(source).UniqueIndexOn("name", "surname")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// non-existing name
+	if err = index.Find("xxx").ForEach(neverCalled); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// test sub-index
+	if err = index.Find("Amelia").ForEach(func(row Row) (e error) {
+		if name := row.SafeGetValue("name", "???"); name != "Amelia" {
+			e = fmt.Errorf("name: %s instead of Amelia", name)
+		}
+
+		return
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// self-join on existing names
+	for _, name := range peopleNames {
+		surnames := map[string]int{}
+		s := index.SubIndex(name).Join(source)
+
+		if err = s.ForEach(func(row Row) error {
+			surnames[row.SafeGetValue("surname", "???")]++
+			return nil
+		}); err != nil {
+			t.Error(err)
+			return
+		}
+
+		if len(surnames) != len(peopleSurnames) {
+			t.Errorf(`Name "%s": Invalid number of surnames: %d instead of %d`, name, len(surnames), len(peopleSurnames))
+			return
+		}
+
+		for _, sname := range peopleSurnames {
+			if count, found := surnames[sname]; !found || count != len(peopleNames) {
+				t.Errorf(`Name "%s": Surname "%s" found %d times`, name, sname, count)
+				return
+			}
+		}
+	}
+
+	// find all existing names and surnames
+	for _, person := range peopleData {
+		var count int
+
+		if err = index.Find(person.name, person.surname).ForEach(func(Row) error {
+			count++
+			return nil
+		}); err != nil {
+			t.Error(err)
+			return
+		}
+
+		if count != 1 {
+			t.Errorf("%s %s found %d times", person.name, person.surname, count)
+			return
+		}
+	}
+
+	// try non-existent name and surname
+	if err = index.Find("Jack", "xxx").ForEach(neverCalled); err != nil {
+		t.Error(err)
+		return
+	}
+}
+
+func TestResolver(t *testing.T) {
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for i := 0; i < 1000; i++ {
+		// copy source
+		s, _ := source.ToMemory()
+		src := s.source.(rowSlice)
+
+		// add random number of duplicates
+		dup := src[rand.Intn(len(src))]
+		id, name, surname := dup["id"], dup["name"], dup["surname"]
+		n := rand.Intn(100) + 1
+
+		for j := 0; j < n; j++ {
+			k := rand.Intn(len(src))
+			src = append(src, dup)
+			src[k], src[len(src)-1] = src[len(src)-1], src[k]
+		}
+
+		// index
+		index, err := Take(src).IndexOn("name", "surname")
+
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// resolve
+		nc := 0
+
+		if err := index.ResolveDuplicates(func(rows []Row) (Row, error) {
+			if nc++; nc != 1 {
+				return nil, errors.New("Unexpected second call to the resolution function")
+			}
+
+			if len(rows) != n+1 {
+				return nil, fmt.Errorf("Unexpected number of duplicates: %d instead of %d", len(rows), n+1)
+			}
+
+			for _, r := range rows {
+				if r["id"] != id || r["name"] != name || r["surname"] != surname {
+					return nil, errors.New("Unexpected duplicate: " + r.String())
+				}
+			}
+
+			return rows[0], nil
+		}); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+}
+
+func TestTransformedSource(t *testing.T) {
+	// cust_id, prod_id, amount
+	amounts, err := createAmountsTable()
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// aggregate by cust_id
+	custAmounts := make([]float64, len(peopleData))
+
+	if err = amounts.ForEach(func(row Row) (e error) {
+		var values []string
+
+		if values, e = row.SelectValues("cust_id", "prod_id", "amount"); e != nil {
+			return
+		}
+
+		var amount float64
+
+		if amount, e = strconv.ParseFloat(values[2], 64); e != nil {
+			return
+		}
+
+		var cid int
+
+		if cid, e = strconv.Atoi(values[0]); e != nil {
+			return
+		}
+
+		custAmounts[cid] += amount
+		return
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// check custAmounts
+	origCustAmounts := make([]float64, len(peopleData))
+
+	for _, order := range ordersData {
+		origCustAmounts[order.custID] += float64(order.qty) * stockItems[order.prodID].price
+	}
+
+	for i, amount := range origCustAmounts {
+		if math.Abs((custAmounts[i]-amount)/amount) > 1e-6 {
+			t.Errorf("Amount mismatch for %s %s (%d): %f instead of %f",
+				peopleData[i].name, peopleData[i].surname, i, custAmounts[i], amount)
+			return
+		}
+	}
+}
+
+func TestErrors(t *testing.T) {
+	// invalid column name
+	err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "xxx")).ForEach(neverCalled)
+
+	if err == nil || !strings.HasSuffix(err.Error(), "row 0: Column not found: xxx") {
+		t.Error("Unexpected error:", err)
+		return
+	}
+
+	// duplicate column name
+	if err = shouldPanic(func() {
+		CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "id")
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// missing column on index
+	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
+
+	_, err = Take(source).IndexOn("name", "xxx")
+
+	if err == nil || !strings.HasSuffix(err.Error(), `Missing column "xxx" while creating an index`) {
+		t.Error("Unexpected error:", err)
+		return
+	}
+
+	// unique index with duplicate keys
+	_, err = Take(source).UniqueIndexOn("name")
+
+	if err == nil || !strings.Contains(err.Error(), "Duplicate value while creating unique index:") {
+		t.Error(err)
+		return
+	}
+
+	var index *Index
+
+	if index, err = Take(source).IndexOn("name"); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err = index.ResolveDuplicates(func(rows []Row) (Row, error) {
+		if len(rows) != len(peopleSurnames) {
+			return nil, fmt.Errorf("Unexpected number of duplicate rows: %d instead of %d", len(rows), len(peopleSurnames))
+		}
+
+		return rows[0], nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if len(index.impl.rows) != len(peopleNames) {
+		t.Errorf("Unexpected number of rows: %d instead of %d", len(index.impl.rows), len(peopleNames))
+	}
+
+	// panics on index
+	if err = shouldPanic(func() {
+		Take(source).IndexOn() // empty list of columns
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if index, err = Take(source).IndexOn("id"); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err = shouldPanic(func() {
+		index.SubIndex("aaa", "bbb") // too many values
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// invalid header
+	people := CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+		"name":    1,
+		"surname": 3, // wrong column
+	})
+
+	err = people.ForEach(neverCalled)
+
+	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
+		t.Error("Unexpected error:", err)
+		return
+	}
+
+	people = CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+		"name":    1,
+		"surname": 25, // non-existent column
+	})
+
+	err = people.ForEach(neverCalled)
+
+	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
+		t.Error("Unexpected error:", err)
+		return
+	}
+}
+
+// benchmarks -------------------------------------------------------------------------------------
+func BenchmarkCreateSmallSingleIndex(b *testing.B) {
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var index *Index
+
+		if index, err = Take(source).UniqueIndexOn("id"); err != nil {
+			b.Error(err)
+			return
+		}
+
+		// just to do something with the index
+		if len(index.impl.columns) != 1 || index.impl.columns[0] != "id" || len(index.impl.rows) != len(peopleData) {
+			b.Error("Wrong index")
+			return
+		}
+	}
+}
+
+func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
+	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToMemory()
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var index *Index
+
+		if index, err = Take(source).IndexOn("cust_id", "prod_id"); err != nil {
+			b.Error(err)
+			return
+		}
+
+		// just to do something with the index
+		if len(index.impl.columns) != 2 || len(index.impl.rows) != len(ordersData) {
+			b.Error("Wrong index")
+			return
+		}
+	}
+}
+
+func BenchmarkSearchSmallSingleIndex(b *testing.B) {
+	index, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err = index.Find("0").ForEach(func(row Row) error {
+			if !row.HasColumn("id") {
+				return errors.New("id not found")
+			}
+
+			return nil
+		}); err != nil {
+			b.Error(err)
+			return
+		}
+	}
+}
+
+func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
+	index, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err = index.Find("0", "0").ForEach(func(row Row) error {
+			if !row.HasColumn("cust_id") {
+				return errors.New("cust_id not found")
+			}
+
+			return nil
+		}); err != nil {
+			b.Error(err)
+			return
+		}
+	}
+}
+
+func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
+	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToMemory()
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	var index *Index
+
+	index, err = Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		src, err := index.Join(source, "cust_id").ToMemory()
+
+		if err != nil {
+			b.Error(err)
+			return
+		}
+
+		src.Top(1).ForEach(nop) // touch src
+	}
+}
+
+func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	var index *Index
+
+	index, err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
+
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		src, err := index.Join(source, "id").ToMemory()
+
+		if err != nil {
+			b.Error(err)
+			return
+		}
+
+		src.Top(1).ForEach(nop) // touch src
+	}
+}
+
+// generated test data ----------------------------------------------------------------------------
+type personData struct {
+	name, surname string
+	year          int
+}
+
+var peopleData = make([]personData, len(peopleNames)*len(peopleSurnames))
+
+type orderData struct {
+	custID, prodID, qty int
+	ts                  time.Time
+}
+
+const numOrders = 10000
+
+var ordersData [numOrders]orderData
+
+// people.csv -------------------------------------------------------------------------------------
+// http://www.ukbabynames.com/
+var peopleNames = [...]string{
+	"Amelia", "Olivia", "Emily", "Ava", "Isla",
+	"Oliver", "Jack", "Harry", "Jacob", "Charlie",
+}
+
+// http://surname.sofeminine.co.uk/w/surnames/most-common-surnames-in-great-britain.html
+var peopleSurnames = [...]string{
+	"Smith", "Jones", "Taylor", "Williams", "Brown", "Davies",
+	"Evans", "Wilson", "Thomas", "Roberts", "Johnson", "Lewis",
+}
+
+var peopleHeader = []string{"id", "name", "surname", "born"}
+
+func makePersonsCsvFile() error {
+	return withTempFileWriter("people", func(out *csv.Writer) error {
+		// header
+		if err := out.Write(peopleHeader); err != nil {
+			return err
+		}
+
+		// body
+		for i, name := range peopleNames {
+			for j, surname := range peopleSurnames {
+				id := i*len(peopleSurnames) + j
+
+				peopleData[id] = personData{
+					name:    name,
+					surname: surname,
+					year:    1916 + rand.Intn(90), // at least 10 years old
+				}
+
+				person := &peopleData[id]
+
+				if err := out.Write([]string{
+					strconv.Itoa(id),
+					person.name,
+					person.surname,
+					strconv.Itoa(person.year),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// stock.csv ------------------------------------------------------------------------------------
+var stockItems = [...]struct {
+	name  string
+	price float64
+}{
+	{"banana", 0.01},
+	{"apple", 0.02},
+	{"orange", 0.03},
+	{"pea", 0.04},
+	{"tomato", 0.05},
+	{"potato", 0.06},
+	{"cucumber", 0.07},
+	{"iPhone", 0.08},
+}
+
+var stockItemsHeader = []string{"prod_id", "product", "price"}
+
+func makeStockCsvFile() error {
+	return withTempFileWriter("stock", func(out *csv.Writer) error {
+		// header
+		if err := out.Write(stockItemsHeader); err != nil {
+			return err
+		}
+
+		// body
+		for i, item := range stockItems {
+			price := strconv.FormatFloat(item.price, 'f', 2, 64)
+
+			if err := out.Write([]string{strconv.Itoa(i), item.name, price}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// orders.csv -----------------------------------------------------------------------------------
+var orderHeader = []string{"order_id", "cust_id", "prod_id", "qty", "ts"}
+
+func makeOrderCsvFile() error {
+	return withTempFileWriter("orders", func(out *csv.Writer) error {
+		// header
+		if err := out.Write(orderHeader); err != nil {
+			return err
+		}
+
+		// body
+		now := time.Now()
+
+		for i := 0; i < numOrders; i++ {
+			ordersData[i] = orderData{
+				custID: rand.Intn(len(peopleNames) * len(peopleSurnames)),
+				prodID: rand.Intn(len(stockItems)),
+				qty:    rand.Intn(100) + 1,
+				ts:     now.Add(-time.Second * time.Duration(rand.Intn(100000)+1)),
+			}
+
+			order := &ordersData[i]
+
+			if err := out.Write([]string{
+				strconv.Itoa(i),
+				strconv.Itoa(order.custID),
+				strconv.Itoa(order.prodID),
+				strconv.Itoa(order.qty),
+				order.ts.Format(time.RFC3339),
+			}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// tests set-up -----------------------------------------------------------------------------------
+func TestMain(m *testing.M) {
+	os.Exit(runTests(m))
+}
+
+func runTests(m *testing.M) int {
+	defer deleteTemps()
+
+	if err := anyFrom(makePersonsCsvFile, makeOrderCsvFile, makeStockCsvFile); err != nil {
+		panic(err)
+	}
+
+	saveTemps := flag.Bool("save-temps", false, "Save all generated temporary files")
+	flag.Parse()
+
+	if *saveTemps {
+		if err := saveTempFiles(); err != nil {
+			panic(err)
+		}
+	}
+
+	return m.Run()
+}
+
+// helpers ----------------------------------------------------------------------------------------
+func anyFrom(funcs ...func() error) error {
+	for _, fn := range funcs {
+		if err := fn(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func sortedCopy(list []string) (r []string) {
+	r = make([]string, len(list))
+
+	copy(r, list)
+	sort.Strings(r)
+	return
+}
+
+func createTempFile() (name string, err error) {
+	var file *os.File
+
+	if file, err = ioutil.TempFile("", name); err != nil {
+		return
+	}
+
+	name = file.Name()
+	file.Close()
+	return
+}
+
+// cust_id, prod_id, amount
+func createAmountsTable() (amounts *Table, err error) {
+	var prodIndex *Index
+
+	prodIndex, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")).UniqueIndexOn("prod_id")
+
+	if err == nil {
+		amounts = prodIndex.
+			Join(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+			Transform(func(row Row) (Row, error) {
+				var qty int
+				var price float64
+				var e error
+
+				if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+					return nil, e
+				}
+
+				if price, e = strconv.ParseFloat(row.SafeGetValue("price", "???"), 64); e != nil {
+					return nil, e
+				}
+
+				row["amount"] = strconv.FormatFloat(price*float64(qty), 'f', 2, 64)
+
+				delete(row, "price")
+				delete(row, "qty")
+				return row, nil
+			})
+	}
+
+	return
+}
+
+func neverCalled(Row) error { return errors.New("This must never be called") }
+
+func nop(Row) error { return nil }
+
+func shouldPanic(fn func()) error {
+	defer func() {
+		_ = recover()
+	}()
+
+	fn()
+	return errors.New("Panic did not happen")
+}
+
+// temporary files --------------------------------------------------------------------------------
+var tempFiles = make(map[string]string, 5)
+
+func deleteTemps() {
+	for _, name := range tempFiles {
+		os.Remove(name)
+	}
+}
+
+func withTempFileWriter(name string, fn func(*csv.Writer) error) (err error) {
+	var file *os.File
+
+	if file, err = ioutil.TempFile("", name); err != nil {
+		return err
+	}
+
+	defer func() {
+		if e := file.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
+
+	tempFiles[name] = file.Name()
+
+	out := csv.NewWriter(file)
+
+	defer func() {
+		if err == nil {
+			out.Flush()
+			err = out.Error()
+		}
+	}()
+
+	err = fn(out)
+	return
+}
+
+func saveTempFiles() error {
+	for name, fileName := range tempFiles {
+		dest := name + ".csv"
+
+		os.Remove(dest) // otherwise os.Link fails
+
+		if err := os.Link(fileName, dest); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
