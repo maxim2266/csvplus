@@ -37,7 +37,7 @@ if err != nil {
 	return err
 }
 
-orders := csvplus.CsvFileDataSource("orders.csv").SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")
+orders := csvplus.CsvFileDataSource("orders.csv").SelectColumns("cust_id", "prod_id", "qty", "ts")
 
 return customers.
 	Join(orders, "cust_id").
@@ -55,7 +55,7 @@ For more details see the [documentation](https://godoc.org/github.com/maxim2266/
 
 ### Design principles
 
-The package functionality is based on operations on the following entities:
+The package functionality is based on the operations on the following entities:
 - type Row
 - interface DataSource
 - type Table
@@ -74,11 +74,11 @@ operation on `DataSource` is iteration over the rows. The iteration is performed
 an implementation of the interface for `.csv` files.
 
 #### Type `Table`
-Type `Table` implements sequential operations on a given data source as well as the `DataSource`
+Type `Table` implements sequential operations on a given data source, as well as the `DataSource`
 interface itself and other iterating methods. All sequential operations are 'lazy', i.e. they are not
 invoked immediately, but instead they return a new table which, when iterated over, invokes
 the particular operation. The operations can be chained using so called fluent interface.
-The actual iteration over a table only happens when any of the following methods are called:
+The actual iteration over a table only happens when any of the following methods is called:
 - `ForEach`
 - `IndexOn`
 - `UniqueIndexOn`

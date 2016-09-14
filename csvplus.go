@@ -49,7 +49,7 @@ It is assumed that each column has a unique name.
 In a .csv file, the column names may either come from the first line of the file ("expected header"),
 or they can be set-up via configuration of the reader object ("assumed header").
 
-Using meaningful column names instead of indices is usually more convenient as columns get rearranged
+Using meaningful column names instead of indices is usually more convenient when the columns get rearranged
 during the execution of the processing pipeline.
 */
 type Row map[string]string
@@ -125,7 +125,7 @@ func (row Row) SelectExisting(cols ...string) Row {
 }
 
 // Select takes a list of column names and returns a new Row
-// with all the columns not on the list removed, or an error if any column is not present.
+// containing only the specified columns, or an error if any column is not present.
 func (row Row) Select(cols ...string) (Row, error) {
 	r := make(map[string]string, len(cols))
 
@@ -173,23 +173,27 @@ type RowFunc func(Row) error
 // DataSource is the interface to any data that can be represented as a sequence of Rows.
 type DataSource interface {
 	// ForEach should call the given RowFunc once per each Row. The iteration should
-	// continue for as long as the RowFunc returns 'nil'. When RowFunc returns a non-nil error,
-	// this function should stop iteration and return an error, which may be either the original one,
-	// or some other error. The special value of io.EOF should be treated as a 'stop iteration'
-	// command, in which case this function should return 'nil' error. Given that Rows can be modified
-	// by the RowFunc, the implementations should only pass copies of their underlying rows
-	// to the supplied RowFunc.
+	// continue for as long as the RowFunc returns 'nil'. When RowFunc returns
+	// a non-nil error, this function should stop iteration and return an error,
+	// which may be either the original one, or some other error. The special
+	// value of io.EOF should be treated as a 'stop iteration' command, in which
+	// case this function should return 'nil' error. Given that Rows can be modified
+	// by the RowFunc, the implementations should only pass copies of their
+	// underlying rows to the supplied RowFunc.
 	ForEach(RowFunc) error
 }
 
-// Table is a DataSource, enriched with a number of lazy stream processing operations
-// that can be combined using fluent interface as described in https://en.wikipedia.org/wiki/Fluent_interface
+// Table implements sequential operations on a given data source as well as
+// the DataSource interface itself and other iterating methods. All sequential
+// operations are 'lazy', i.e. they are not invoked immediately, but instead
+// they return a new table which, when iterated over, invokes the particular
+// operation. The operations can be chained using so called fluent interface.
 type Table struct {
 	source DataSource
 	wrap   func(RowFunc) RowFunc
 }
 
-// ForEach iterates over the input DataSource invoking all the operations in the processing pipeline,
+// ForEach iterates over the Table invoking all the operations in the processing pipeline,
 // and calls the specified RowFunc on each resulting Row.
 func (t *Table) ForEach(fn RowFunc) error {
 	return t.source.ForEach(t.wrap(fn))
@@ -204,9 +208,9 @@ func Take(source DataSource) *Table {
 }
 
 // Transform is the most generic operation on a Row. It takes a function which
-// maps a Row to another Row or an error. Any error returned from that function
+// maps a Row to another Row or returns an error. Any error returned from that function
 // stops the iteration, otherwise the returned Row, if not empty, gets passed
-// further down the processing pipeline.
+// down to the next stage of the processing pipeline.
 func (t *Table) Transform(trans func(Row) (Row, error)) *Table {
 	return &Table{
 		source: t,
@@ -322,7 +326,7 @@ func (t *Table) TakeWhile(pred func(Row) bool) *Table {
 	}
 }
 
-// DropWhile, upon iteration, ignores all the Rows as long as the specified predicate is true;
+// DropWhile, upon iteration, ignores all the Rows for as long as the specified predicate is true;
 // afterwards all the remaining Rows are passed down the pipeline.
 func (t *Table) DropWhile(pred func(Row) bool) *Table {
 	return &Table{
@@ -343,7 +347,7 @@ func (t *Table) DropWhile(pred func(Row) bool) *Table {
 
 // ToCsvFile iterates the input source  writing the selected columns to the file with the given name,
 // in "canonical" form with the header on the first line and with all the lines having the same number of fields,
-// using default settings for the underlying Writer from encoding/csv package.
+// using default settings for the underlying Writer from the encoding/csv package.
 func (t *Table) ToCsvFile(fileName string, columns ...string) error {
 	if len(columns) == 0 {
 		panic("Empty columns list in ToCsvFile()")
@@ -482,8 +486,11 @@ func (index *Index) SubIndex(values ...string) *Index {
 
 // ResolveDuplicates calls the specified function once per each pack of duplicates with the same key.
 // The specified function must not modify its parameter and is expected to do one of the following:
+//
 // - Select and return one row from the input list. The row will be used as the only row with its key;
+//
 // - Return an empty row. The entire set of rows will be ignored;
+//
 // - Return an error which will be passed back to the caller of ResolveDuplicates().
 func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) error {
 	return index.impl.dedup(resolve)
@@ -758,7 +765,7 @@ type CsvDataSource struct {
 }
 
 // CsvFileDataSource constructs a new CsvDataSource bound to the specified
-// file name and with default csv.Reader settings.
+// file name and with the default csv.Reader settings.
 func CsvFileDataSource(name string) *CsvDataSource {
 	return &CsvDataSource{
 		name:      name,
@@ -791,7 +798,7 @@ func (s *CsvDataSource) TrimLeadingSpace() *CsvDataSource {
 	return s
 }
 
-// AssumeHeader sets the header for input files that do not have their column
+// AssumeHeader sets the header for those input files that do not have their column
 // names specified on the first line of the file. The header specification is a map
 // from assigned column names to their corresponding column indices.
 func (s *CsvDataSource) AssumeHeader(spec map[string]int) *CsvDataSource {
@@ -814,7 +821,7 @@ func (s *CsvDataSource) AssumeHeader(spec map[string]int) *CsvDataSource {
 // names specified on the first line of the file. The line gets verified
 // against this specification each time the input file is opened.
 // The header specification is a map from expected column names to their corresponding
-// column indices. A negative value for a index means that the real value of the index
+// column indices. A negative value for an index means that the real value of the index
 // will be found searching the first line of the file for the specified column name.
 func (s *CsvDataSource) ExpectHeader(spec map[string]int) *CsvDataSource {
 	if len(spec) == 0 {
@@ -861,7 +868,7 @@ func (s *CsvDataSource) NumFields(n int) *CsvDataSource {
 	return s
 }
 
-// NumFieldsAuto specifies that the number of field on each line must match that of
+// NumFieldsAuto specifies that the number of fields on each line must match that of
 // the first line of the input file.
 func (s *CsvDataSource) NumFieldsAuto() *CsvDataSource {
 	return s.NumFields(0)
@@ -875,7 +882,7 @@ func (s *CsvDataSource) NumFieldsAny() *CsvDataSource {
 }
 
 // ForEach reads the input file line by line, converts each line to a Row and calls
-// the specified RowFunc per each row. ForEach is goroutine-safe and may be called multiple times.
+// the supplied RowFunc. ForEach is goroutine-safe and may be called multiple times.
 func (s *CsvDataSource) ForEach(fn RowFunc) error {
 	var lineNo uint64
 
@@ -1007,7 +1014,7 @@ func (s *CsvDataSource) mapError(err error, lineNo uint64) error {
 	}
 }
 
-// DataSourceError is the type of the error returned from CsvDataSource
+// DataSourceError is the type of the error returned from CsvDataSource.ForEach method.
 type DataSourceError struct {
 	Name string
 	Line uint64
