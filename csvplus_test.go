@@ -149,6 +149,26 @@ func TestSimpleDataSource(t *testing.T) {
 	}
 }
 
+func TestFilterMap(t *testing.T) {
+	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("name", "surname", "id")
+
+	err := Take(source).
+		Filter(Like(Row{"name": "Amelia"})).
+		Map(func(row Row) Row { row["name"] = "Julia"; return row }).
+		ForEach(func(row Row) error {
+			if row["name"] != "Julia" {
+				return fmt.Errorf("Unexpected name: %s instead of Julia", row["name"])
+			}
+
+			return nil
+		})
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+}
+
 func TestWriteFile(t *testing.T) {
 	var tmpFileName string
 	var file1, file2 []byte

@@ -356,7 +356,7 @@ func (t *Table) ToCsvFile(fileName string, columns ...string) error {
 		}
 
 		// body
-		return t.source.ForEach(func(row Row) error {
+		return t.ForEach(func(row Row) error {
 			if values, err := row.SelectValues(columns...); err == nil {
 				return out.Write(values)
 			} else {
