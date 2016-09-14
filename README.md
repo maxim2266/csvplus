@@ -7,48 +7,48 @@ lazy evaluation, indices and joins.
 
 Simple sequential processing:
 ```Go
-	people := csvplus.CsvFileDataSource("people.csv").SelectColumns("name", "surname", "id")
+people := csvplus.CsvFileDataSource("people.csv").SelectColumns("name", "surname", "id")
 
-	err := csvplus.Take(people).
-		Filter(csvplus.Like(csvplus.Row{"name": "Amelia"})).
-		Map(func(row csvplus.Row) csvplus.Row { row["name"] = "Julia"; return row }).
-		ToCsvFile("out.csv", "name", "surname")
+err := csvplus.Take(people).
+	Filter(csvplus.Like(csvplus.Row{"name": "Amelia"})).
+	Map(func(row csvplus.Row) csvplus.Row { row["name"] = "Julia"; return row }).
+	ToCsvFile("out.csv", "name", "surname")
 
-	if err != nil {
-		return err
-	}
+if err != nil {
+	return err
+}
 ```
 
 More involved example:
 ```Go
-	customers, err := csvplus.Take(
-		csvplus.CsvFileDataSource("people.csv").SelectColumns("id", "name", "surname")).
-		UniqueIndexOn("id")
+customers, err := csvplus.Take(
+	csvplus.CsvFileDataSource("people.csv").SelectColumns("id", "name", "surname")).
+	UniqueIndexOn("id")
 
-	if err != nil {
-		return err
-	}
+if err != nil {
+	return err
+}
 
-	products, err := csvplus.Take(
-		csvplus.CsvFileDataSource("stock.csv").SelectColumns("prod_id", "product", "price")).
-		UniqueIndexOn("prod_id")
+products, err := csvplus.Take(
+	csvplus.CsvFileDataSource("stock.csv").SelectColumns("prod_id", "product", "price")).
+	UniqueIndexOn("prod_id")
 
-	if err != nil {
-		return err
-	}
+if err != nil {
+	return err
+}
 
-	orders := csvplus.CsvFileDataSource("orders.csv").SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")
+orders := csvplus.CsvFileDataSource("orders.csv").SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")
 
-	return customers.
-		Join(orders, "cust_id").
-		Join(products).
-		ForEach(func(row csvplus.Row) error {
-			// From my sample data prints lines like:
-			//	John Doe bought 7 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
-			_, e := fmt.Printf("%s %s bought %s %ss for £%s each on %s\n",
-				row["name"], row["surname"], row["qty"], row["product"], row["price"], row["ts"])
-			return e
-		})
+return customers.
+	Join(orders, "cust_id").
+	Join(products).
+	ForEach(func(row csvplus.Row) error {
+		// From my sample data prints lines like:
+		//	John Doe bought 7 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
+		_, e := fmt.Printf("%s %s bought %s %ss for £%s each on %s\n",
+			row["name"], row["surname"], row["qty"], row["product"], row["price"], row["ts"])
+		return e
+	})
 ```
 
 For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
@@ -77,7 +77,7 @@ an implementation of the interface for `.csv` files.
 Type `Table` implements sequential operations on a given data source as well as the `DataSource`
 interface itself and other iterating methods. All sequential operations are 'lazy', i.e. they are not
 invoked immediately, but instead they return a new table which, when iterated over, invokes
-the particular operation. The operations can be chained using so called fluent API.
+the particular operation. The operations can be chained using so called fluent interface.
 The actual iteration over a table only happens when any of the following methods are called:
 - `ForEach`
 - `IndexOn`
