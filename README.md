@@ -1,7 +1,6 @@
 #csvplus
 
-Package `csvplus` extends the standard Go `encoding/csv` package with stream processing, fluent interface,
-lazy evaluation, indices and joins.
+Package `csvplus` extends the standard Go `encoding/csv` package with fluent interface, lazy stream operations, indices and joins.
 
 ### Examples
 
