@@ -429,13 +429,17 @@ func (t *Table) Join(index *Index, columns ...string) *Table {
 }
 
 func mergeRows(left, right Row) Row {
-	left = left.Clone()
+	r := make(map[string]string, len(left)+len(right))
 
-	for k, v := range right {
-		left[k] = v
+	for k, v := range left {
+		r[k] = v
 	}
 
-	return left
+	for k, v := range right {
+		r[k] = v
+	}
+
+	return r
 }
 
 // NotIn returns a table containing all the rows not in the specified Index, unchanged. The specified
