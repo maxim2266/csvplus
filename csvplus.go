@@ -400,7 +400,40 @@ func (t *Table) UniqueIndexOn(columns ...string) (*Index, error) {
 // Each row in the resulting table contains all the columns from both the current table and the index.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
 func (t *Table) Join(index *Index, columns ...string) *Table {
-	return index.Join(t, columns...)
+	if len(columns) == 0 {
+		columns = index.impl.columns
+	} else if len(columns) > len(index.impl.columns) {
+		panic("Too many source columns in Join()")
+	}
+
+	return &Table{
+		source: t,
+		wrap: func(fn RowFunc) RowFunc {
+			return func(row Row) (err error) {
+				var values []string
+
+				if values, err = row.SelectValues(columns...); err == nil {
+					rows := index.impl.find(values)
+
+					for _, irow := range rows {
+						if err = fn(mergeToRight(irow, row)); err != nil {
+							break
+						}
+					}
+				}
+
+				return
+			}
+		},
+	}
+}
+
+func mergeToRight(left, right Row) Row {
+	for k, v := range left {
+		right[k] = v
+	}
+
+	return right
 }
 
 // NotIn returns a table containing all the rows not in the specified Index, unchanged. The specified
@@ -527,22 +560,12 @@ func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) err
 
 // Join returns a Table which is a join between the current Index and the specified
 // Table. The specified columns are matched against those from the index, in the order of specification.
-// Empty 'columns' list yields a join on the columns from the Index  (aka "natural join") which all must
+// Empty 'columns' list yields a join on the columns from the Index (aka "natural join") which all must
 // exist in the specified DataSource.
 // Each row in the resulting table contains all the columns from both the index and the data source.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
 func (index *Index) Join(source DataSource, columns ...string) *Table {
-	if len(columns) == 0 {
-		columns = index.impl.columns
-	} else if len(columns) > len(index.impl.columns) {
-		panic("Too many source columns in Join()")
-	}
-
-	return Take(&joinedDataSource{
-		index:   index,
-		source:  source,
-		columns: columns,
-	})
+	return Take(source).Join(index, columns...)
 }
 
 func createIndex(source DataSource, columns []string) (*Index, error) {
@@ -742,45 +765,6 @@ func searchFunc(row Row, values, columns []string, eq bool) bool {
 	}
 
 	return eq
-}
-
-// data source joined on an index
-type joinedDataSource struct {
-	index   *Index
-	source  DataSource
-	columns []string
-}
-
-func (s *joinedDataSource) ForEach(fn RowFunc) error {
-	values := make([]string, len(s.columns))
-
-	return s.source.ForEach(func(row Row) error {
-		// unrolled row.SelectValues()
-		for i, col := range s.columns {
-			var found bool
-
-			if values[i], found = row[col]; !found {
-				return fmt.Errorf(`Missing column "%s" while joining on an index`, col)
-			}
-		}
-
-		// unrolled index.Find().ForEach()
-		for _, irow := range s.index.impl.find(values) {
-			if err := fn(mergeToRight(irow, row)); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
-func mergeToRight(left, right Row) Row {
-	for k, v := range left {
-		right[k] = v
-	}
-
-	return right
 }
 
 // CsvDataSource is an implementation of the DataSource interface that reads its
