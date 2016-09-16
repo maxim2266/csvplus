@@ -384,13 +384,13 @@ func (t *Table) ToMemory() (*Table, error) {
 // IndexOn iterates the input source building index on the specified columns.
 // Columns are taken from the specified list from left to the right.
 func (t *Table) IndexOn(columns ...string) (*Index, error) {
-	return createIndex(t.source, columns)
+	return createIndex(t, columns)
 }
 
 // UniqueIndexOn iterates the input source building unique index on the specified columns.
 // Columns are taken from the specified list from left to the right.
 func (t *Table) UniqueIndexOn(columns ...string) (*Index, error) {
-	return createUniqueIndex(t.source, columns)
+	return createUniqueIndex(t, columns)
 }
 
 // Join returns a Table which is a join between the current Table and the specified
