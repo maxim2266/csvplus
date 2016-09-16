@@ -459,7 +459,7 @@ func (t *Table) NotIn(index *Index, columns ...string) *Table {
 				var values []string
 
 				if values, err = row.SelectValues(columns...); err == nil {
-					if rows := index.impl.find(values); len(rows) == 0 {
+					if !index.impl.has(values) {
 						err = fn(row)
 					}
 				}
@@ -689,7 +689,7 @@ func (index *indexImpl) dedup(resolve func(rows []Row) (Row, error)) (err error)
 		values, _ := index.rows[lower].SelectValues(index.columns...)
 
 		upper := lower + sort.Search(len(index.rows)-lower, func(i int) bool {
-			return searchFunc(index.rows[lower+i], values, index.columns, false)
+			return cmpFunc(index.rows[lower+i], values, index.columns, false)
 		})
 
 		// resolve
@@ -739,18 +739,37 @@ func (index *indexImpl) find(values []string) []Row {
 
 	// get bounds
 	upper := sort.Search(len(index.rows), func(i int) bool {
-		return searchFunc(index.rows[i], values, index.columns, false)
+		return cmpFunc(index.rows[i], values, index.columns, false)
 	})
 
 	lower := sort.Search(upper, func(i int) bool {
-		return searchFunc(index.rows[i], values, index.columns, true)
+		return cmpFunc(index.rows[i], values, index.columns, true)
 	})
 
 	// done
 	return index.rows[lower:upper]
 }
 
-func searchFunc(row Row, values, columns []string, eq bool) bool {
+func (index *indexImpl) has(values []string) bool {
+	// check boundaries
+	if len(values) == 0 {
+		return false
+	}
+
+	if len(values) > len(index.columns) {
+		panic("Too many columns in indexImpl.has()")
+	}
+
+	// find the lowest index
+	i := sort.Search(len(index.rows), func(i int) bool {
+		return cmpFunc(index.rows[i], values, index.columns, true)
+	})
+
+	// check if the row at the lowest index matches the values
+	return i < len(index.rows) && !cmpFunc(index.rows[i], values, index.columns, false)
+}
+
+func cmpFunc(row Row, values, columns []string, eq bool) bool {
 	for i, val := range values {
 		switch strings.Compare(row[columns[i]], val) {
 		case 1:
