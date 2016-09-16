@@ -38,14 +38,14 @@ if err != nil {
 
 orders := csvplus.CsvFileDataSource("orders.csv").SelectColumns("cust_id", "prod_id", "qty", "ts")
 
-return customers.
-	Join(orders, "cust_id").
+return csvplus.Take(orders).
+	Join(customers, "cust_id").
 	Join(products).
 	ForEach(func(row csvplus.Row) error {
-		// From my sample data prints lines like:
-		//	John Doe bought 7 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
 		_, e := fmt.Printf("%s %s bought %s %ss for £%s each on %s\n",
 			row["name"], row["surname"], row["qty"], row["product"], row["price"], row["ts"])
+		// prints lines like:
+		//	John Doe bought 38 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
 		return e
 	})
 ```

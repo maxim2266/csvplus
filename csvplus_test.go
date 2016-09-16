@@ -258,8 +258,8 @@ func TestSimpleUniqueJoin(t *testing.T) {
 
 	qtyMap := make([]int, len(peopleData))
 
-	err = idIndex.
-		Join(orders, "cust_id").
+	err = Take(orders).
+		Join(idIndex, "cust_id").
 		ForEach(func(row Row) (e error) {
 			var id, orderID, custID, qty int
 
@@ -404,7 +404,7 @@ func TestSimpleTotals(t *testing.T) {
 
 	totals := make([]float64, len(peopleData))
 
-	if err = prodIndex.Join(orders).ForEach(func(row Row) error {
+	if err = Take(orders).Join(prodIndex).ForEach(func(row Row) error {
 		var id, qty int
 		var e error
 
@@ -478,7 +478,7 @@ func TestMultiIndex(t *testing.T) {
 	// self-join on existing names
 	for _, name := range peopleNames {
 		surnames := map[string]int{}
-		s := index.SubIndex(name).Join(source)
+		s := Take(source).Join(index.SubIndex(name))
 
 		if err = s.ForEach(func(row Row) error {
 			surnames[row.SafeGetValue("surname", "???")]++
@@ -907,7 +907,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		src, err := index.Join(source, "cust_id").ToMemory()
+		src, err := Take(source).Join(index, "cust_id").ToMemory()
 
 		if err != nil {
 			b.Error(err)
@@ -938,7 +938,7 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		src, err := index.Join(source, "id").ToMemory()
+		src, err := Take(source).Join(index, "id").ToMemory()
 
 		if err != nil {
 			b.Error(err)
@@ -1153,8 +1153,8 @@ func createAmountsTable() (amounts *Table, err error) {
 	prodIndex, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")).UniqueIndexOn("prod_id")
 
 	if err == nil {
-		amounts = prodIndex.
-			Join(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+		amounts = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+			Join(prodIndex).
 			Transform(func(row Row) (Row, error) {
 				var qty int
 				var price float64

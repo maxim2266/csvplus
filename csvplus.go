@@ -560,16 +560,6 @@ func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) err
 	return index.impl.dedup(resolve)
 }
 
-// Join returns a Table which is a join between the current Index and the specified
-// Table. The specified columns are matched against those from the index, in the order of specification.
-// Empty 'columns' list yields a join on the columns from the Index (aka "natural join") which all must
-// exist in the specified DataSource.
-// Each row in the resulting table contains all the columns from both the index and the data source.
-// This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
-func (index *Index) Join(source DataSource, columns ...string) *Table {
-	return Take(source).Join(index, columns...)
-}
-
 func createIndex(source DataSource, columns []string) (*Index, error) {
 	switch len(columns) {
 	case 0:
@@ -1037,6 +1027,7 @@ type DataSourceError struct {
 	Err  error
 }
 
+// Error returns a human-readable error message string.
 func (e *DataSourceError) Error() string {
 	return fmt.Sprintf(`Data source "%s", row %d: %s`, e.Name, e.Line, e.Err)
 }
