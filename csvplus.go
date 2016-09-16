@@ -395,7 +395,8 @@ func (t *Table) UniqueIndexOn(columns ...string) (*Index, error) {
 
 // Join returns a Table which is a join between the current Table and the specified
 // Index. The specified columns are matched against those from the index, in the order of specification.
-// Empty 'columns' list yields a join on the columns from the Index which must exist in the current Table.
+// Empty 'columns' list yields a join on the columns from the Index (aka "natural join") which all must
+// exist in the current Table.
 // Each row in the resulting table contains all the columns from both the current table and the index.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
 func (t *Table) Join(index *Index, columns ...string) *Table {
@@ -526,7 +527,8 @@ func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) err
 
 // Join returns a Table which is a join between the current Index and the specified
 // Table. The specified columns are matched against those from the index, in the order of specification.
-// Empty 'columns' list yields a join on the columns from the Index which must exist in the specified DataSource.
+// Empty 'columns' list yields a join on the columns from the Index  (aka "natural join") which all must
+// exist in the specified DataSource.
 // Each row in the resulting table contains all the columns from both the index and the data source.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
 func (index *Index) Join(source DataSource, columns ...string) *Table {
