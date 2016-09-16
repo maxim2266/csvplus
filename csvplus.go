@@ -416,7 +416,7 @@ func (t *Table) Join(index *Index, columns ...string) *Table {
 					rows := index.impl.find(values)
 
 					for _, irow := range rows {
-						if err = fn(mergeToRight(irow, row)); err != nil {
+						if err = fn(mergeRows(irow, row)); err != nil {
 							break
 						}
 					}
@@ -428,12 +428,14 @@ func (t *Table) Join(index *Index, columns ...string) *Table {
 	}
 }
 
-func mergeToRight(left, right Row) Row {
-	for k, v := range left {
-		right[k] = v
+func mergeRows(left, right Row) Row {
+	left = left.Clone()
+
+	for k, v := range right {
+		left[k] = v
 	}
 
-	return right
+	return left
 }
 
 // NotIn returns a table containing all the rows not in the specified Index, unchanged. The specified
