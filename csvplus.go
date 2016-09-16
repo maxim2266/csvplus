@@ -402,6 +402,34 @@ func (t *Table) Join(index *Index, columns ...string) *Table {
 	return index.Join(t, columns...)
 }
 
+// NotIn returns a table containing all the rows not in the specified Index, unchanged. The specified
+// columns are matched against those from the index, in the order of specification. If no columns
+// are specified then the columns list is taken from the index.
+func (t *Table) NotIn(index *Index, columns ...string) *Table {
+	if len(columns) == 0 {
+		columns = index.impl.columns
+	} else if len(columns) > len(index.impl.columns) {
+		panic("Too many source columns in NotIn()")
+	}
+
+	return &Table{
+		source: t,
+		wrap: func(fn RowFunc) RowFunc {
+			return func(row Row) (err error) {
+				var values []string
+
+				if values, err = row.SelectValues(columns...); err == nil {
+					if rows := index.impl.find(values); len(rows) == 0 {
+						err = fn(row)
+					}
+				}
+
+				return
+			}
+		},
+	}
+}
+
 // helper function for handling resources associated with an open .csv file
 func withCsvFileWriter(name string, fn func(*csv.Writer) error) (err error) {
 	var file *os.File

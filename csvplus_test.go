@@ -526,6 +526,51 @@ func TestMultiIndex(t *testing.T) {
 	}
 }
 
+func TestNotIn(t *testing.T) {
+	const name = "Emily"
+
+	people, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).
+		Filter(Like(Row{"name": name})).
+		IndexOn("id")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	n := 0
+
+	err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+		NotIn(people, "cust_id").
+		ForEach(func(row Row) error {
+			if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].name == name {
+				return fmt.Errorf("Cust. id %d somehow got through", id)
+			}
+
+			n++
+			return nil
+		})
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// calculate the right number of orders
+	m := 0
+
+	for _, order := range ordersData {
+		if peopleData[order.custID].name != name {
+			m++
+		}
+	}
+
+	if n != m {
+		t.Errorf("Unexpected number of orders: %d instead of %d", n, m)
+		return
+	}
+}
+
 func TestResolver(t *testing.T) {
 	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
 
