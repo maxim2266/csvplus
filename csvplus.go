@@ -757,15 +757,6 @@ func (index *indexImpl) first(values []string) int {
 }
 
 func (index *indexImpl) has(values []string) bool {
-	// check boundaries
-	if len(values) == 0 {
-		return false
-	}
-
-	if len(values) > len(index.columns) {
-		panic("Too many columns in indexImpl.has()")
-	}
-
 	// find the lowest index
 	i := index.first(values)
 
