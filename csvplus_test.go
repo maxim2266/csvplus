@@ -800,7 +800,7 @@ func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var index *Index
 
-		if index, err = Take(source).UniqueIndexOn("id"); err != nil {
+		if index, err = source.UniqueIndexOn("id"); err != nil {
 			b.Error(err)
 			return
 		}
@@ -826,7 +826,7 @@ func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var index *Index
 
-		if index, err = Take(source).IndexOn("cust_id", "prod_id"); err != nil {
+		if index, err = source.IndexOn("cust_id", "prod_id"); err != nil {
 			b.Error(err)
 			return
 		}
@@ -850,14 +850,10 @@ func BenchmarkSearchSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err = index.Find("0").ForEach(func(row Row) error {
-			if !row.HasColumn("id") {
-				return errors.New("id not found")
-			}
+		tbl := index.Find("0")
 
-			return nil
-		}); err != nil {
-			b.Error(err)
+		if len(tbl.source.(rowSlice)) == 0 {
+			b.Error(`id "0" not found`)
 			return
 		}
 	}
@@ -874,14 +870,10 @@ func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err = index.Find("0", "0").ForEach(func(row Row) error {
-			if !row.HasColumn("cust_id") {
-				return errors.New("cust_id not found")
-			}
+		tbl := index.Find("0", "0")
 
-			return nil
-		}); err != nil {
-			b.Error(err)
+		if len(tbl.source.(rowSlice)) == 0 {
+			b.Error(`cust_id "0" and prod_id "0" not found`)
 			return
 		}
 	}
@@ -907,14 +899,10 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		src, err := Take(source).Join(index, "cust_id").ToMemory()
-
-		if err != nil {
+		if err := source.Join(index, "cust_id").ForEach(nop); err != nil {
 			b.Error(err)
 			return
 		}
-
-		src.Top(1).ForEach(nop) // touch src
 	}
 }
 
@@ -938,14 +926,10 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		src, err := Take(source).Join(index, "id").ToMemory()
-
-		if err != nil {
+		if err := source.Join(index, "id").ForEach(nop); err != nil {
 			b.Error(err)
 			return
 		}
-
-		src.Top(1).ForEach(nop) // touch src
 	}
 }
 
