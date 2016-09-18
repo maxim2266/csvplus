@@ -449,7 +449,7 @@ func (t *Table) Except(index *Index, columns ...string) *Table {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
-		panic("Too many source columns in NotIn()")
+		panic("Too many source columns in Except()")
 	}
 
 	return &Table{
