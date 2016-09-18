@@ -442,10 +442,10 @@ func mergeRows(left, right Row) Row {
 	return r
 }
 
-// NotIn returns a table containing all the rows not in the specified Index, unchanged. The specified
+// Except returns a table containing all the rows not in the specified Index, unchanged. The specified
 // columns are matched against those from the index, in the order of specification. If no columns
 // are specified then the columns list is taken from the index.
-func (t *Table) NotIn(index *Index, columns ...string) *Table {
+func (t *Table) Except(index *Index, columns ...string) *Table {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {

@@ -526,7 +526,7 @@ func TestMultiIndex(t *testing.T) {
 	}
 }
 
-func TestNotIn(t *testing.T) {
+func TestExcept(t *testing.T) {
 	const name = "Emily"
 
 	people, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).
@@ -541,7 +541,7 @@ func TestNotIn(t *testing.T) {
 	n := 0
 
 	err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
-		NotIn(people, "cust_id").
+		Except(people, "cust_id").
 		ForEach(func(row Row) error {
 			if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].name == name {
 				return fmt.Errorf("Cust. id %d somehow got through", id)
