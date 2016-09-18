@@ -1,6 +1,7 @@
 #csvplus
 
-Package `csvplus` extends the standard Go `encoding/csv` package with fluent interface, lazy stream operations, indices and joins.
+Package `csvplus` extends the standard Go `encoding/csv` package with fluent interface, lazy stream operations,
+indices and joins.
 
 ### Examples
 
@@ -94,9 +95,8 @@ Another useful operation is resolving duplicates. Building an index takes O(n*lo
 the entire data source gets read into the memory so certain care should be taken when indexing
 huge datasets.
 
-### Current status
-The project is in alpha stage. There may be bugs, and the API may change. Use at your own risk.
-
-Bug reports are welcome.
+### Project status
+The project is in a usable state usually called "beta". Tested on Linux Mint 18 (based on Ubuntu 16.04).
+Go version 1.7.1.
 
 ##### License: BSD
