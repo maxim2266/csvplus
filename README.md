@@ -1,7 +1,11 @@
 #csvplus
 
-Package `csvplus` extends the standard Go `encoding/csv` package with fluent interface, lazy stream operations,
-indices and joins.
+Package `csvplus` extends the standard Go [encoding/csv](https://golang.org/pkg/encoding/csv/)
+package with fluent interface, lazy stream operations, indices and joins.
+
+====
+[![GoDoc](https://godoc.org/github.com/maxim2266/csvplus?status.svg)](https://godoc.org/github.com/maxim2266/csvplus)
+[![Go report](http://goreportcard.com/badge/maxim2266/csvplus)](http://goreportcard.com/report/maxim2266/csvplus)
 
 ### Examples
 
@@ -51,8 +55,6 @@ return csvplus.Take(orders).
 	})
 ```
 
-For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
-
 ### Design principles
 
 The package functionality is based on the operations on the following entities:
@@ -77,7 +79,7 @@ an implementation of the interface for `.csv` files.
 Type `Table` implements sequential operations on a given data source, as well as the `DataSource`
 interface itself and other iterating methods. All sequential operations are 'lazy', i.e. they are not
 invoked immediately, but instead they return a new table which, when iterated over, invokes
-the particular operation. The operations can be chained using so called fluent interface.
+the particular operation. The operations can be chained using so called [fluent interface](https://en.wikipedia.org/wiki/Fluent_interface).
 The actual iteration over a table only happens when any of the following methods is called:
 - `ForEach`
 - `IndexOn`
@@ -94,6 +96,8 @@ a `Table`. The type has operations for finding rows and creating sub-indices in 
 Another useful operation is resolving duplicates. Building an index takes O(n*log(n)) time, but before that
 the entire data source gets read into the memory so certain care should be taken when indexing
 huge datasets.
+
+For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
 
 ### Project status
 The project is in a usable state usually called "beta". Tested on Linux Mint 18 (based on Ubuntu 16.04).

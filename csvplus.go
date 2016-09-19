@@ -353,7 +353,7 @@ func (t Table) TakeWhile(pred func(Row) bool) Table {
 	}
 }
 
-// DropWhile, upon iteration, ignores all the Rows for as long as the specified predicate is true;
+// DropWhile ignores all the Rows for as long as the specified predicate is true;
 // afterwards all the remaining Rows are passed down the pipeline.
 func (t Table) DropWhile(pred func(Row) bool) Table {
 	return Table{
