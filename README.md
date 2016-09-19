@@ -1,8 +1,9 @@
 #csvplus
-====
+
 [![GoDoc](https://godoc.org/github.com/maxim2266/csvplus?status.svg)](https://godoc.org/github.com/maxim2266/csvplus)
 [![Go report](http://goreportcard.com/badge/maxim2266/csvplus)](http://goreportcard.com/report/maxim2266/csvplus)
 
+====
 Package `csvplus` extends the standard Go [encoding/csv](https://golang.org/pkg/encoding/csv/)
 package with fluent interface, lazy stream operations, indices and joins.
 
