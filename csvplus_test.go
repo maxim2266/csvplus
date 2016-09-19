@@ -581,8 +581,9 @@ func TestResolver(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		// copy source
-		s, _ := source.ToMemory()
-		src := s.source.(rowSlice)
+		var src rowSlice
+
+		source.ForEach(func(row Row) error { src = append(src, row); return nil })
 
 		// add random number of duplicates
 		dup := src[rand.Intn(len(src))]
@@ -850,12 +851,7 @@ func BenchmarkSearchSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		tbl := index.Find("0")
-
-		if len(tbl.source.(rowSlice)) == 0 {
-			b.Error(`id "0" not found`)
-			return
-		}
+		index.Find("0")
 	}
 }
 
@@ -870,12 +866,7 @@ func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		tbl := index.Find("0", "0")
-
-		if len(tbl.source.(rowSlice)) == 0 {
-			b.Error(`cust_id "0" and prod_id "0" not found`)
-			return
-		}
+		index.Find("0", "0")
 	}
 }
 
@@ -1131,7 +1122,7 @@ func createTempFile() (name string, err error) {
 }
 
 // cust_id, prod_id, amount
-func createAmountsTable() (amounts *Table, err error) {
+func createAmountsTable() (amounts Table, err error) {
 	var prodIndex *Index
 
 	prodIndex, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")).UniqueIndexOn("prod_id")

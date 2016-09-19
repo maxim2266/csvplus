@@ -189,21 +189,21 @@ type DataSource interface {
 // they return a new table which, when iterated over, invokes the particular
 // operation. The operations can be chained using so called fluent interface.
 type Table struct {
-	source DataSource
-	wrap   func(RowFunc) RowFunc
+	exec func(RowFunc) error
+	wrap func(RowFunc) RowFunc
 }
 
 // ForEach iterates over the Table invoking all the operations in the processing pipeline,
 // and calls the specified RowFunc on each resulting Row.
-func (t *Table) ForEach(fn RowFunc) error {
-	return t.source.ForEach(t.wrap(fn))
+func (t Table) ForEach(fn RowFunc) error {
+	return t.exec(t.wrap(fn))
 }
 
 // Take is the starting point for fluent combination. It wraps any DataSource into a Table.
-func Take(source DataSource) *Table {
-	return &Table{
-		source: source,
-		wrap:   func(fn RowFunc) RowFunc { return fn },
+func Take(source DataSource) Table {
+	return Table{
+		exec: source.ForEach,
+		wrap: func(fn RowFunc) RowFunc { return fn },
 	}
 }
 
@@ -211,9 +211,9 @@ func Take(source DataSource) *Table {
 // maps a Row to another Row or returns an error. Any error returned from that function
 // stops the iteration, otherwise the returned Row, if not empty, gets passed
 // down to the next stage of the processing pipeline.
-func (t *Table) Transform(trans func(Row) (Row, error)) *Table {
-	return &Table{
-		source: t,
+func (t Table) Transform(trans func(Row) (Row, error)) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			return func(row Row) (err error) {
 				if row, err = trans(row); err == nil && len(row) > 0 {
@@ -228,9 +228,9 @@ func (t *Table) Transform(trans func(Row) (Row, error)) *Table {
 
 // Filter takes a predicate which, when applied to a Row, decides if that Row
 // should be passed down for further processing. The predicate should return 'true' to pass the Row.
-func (t *Table) Filter(pred func(Row) bool) *Table {
-	return &Table{
-		source: t,
+func (t Table) Filter(pred func(Row) bool) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			return func(row Row) (err error) {
 				if pred(row) {
@@ -245,18 +245,18 @@ func (t *Table) Filter(pred func(Row) bool) *Table {
 
 // Map takes a function which gets applied to each Row when the source is iterated over. The function
 // may return a modified input Row, or an entirely new Row.
-func (t *Table) Map(mf func(Row) Row) *Table {
-	return &Table{
-		source: t,
-		wrap:   func(fn RowFunc) RowFunc { return func(row Row) error { return fn(mf(row)) } },
+func (t Table) Map(mf func(Row) Row) Table {
+	return Table{
+		exec: t.ForEach,
+		wrap: func(fn RowFunc) RowFunc { return func(row Row) error { return fn(mf(row)) } },
 	}
 }
 
 // Validate takes a function which checks every Row upon iteration and returns an error
 // if the validation fails. The iteration stops at the first error encountered.
-func (t *Table) Validate(vf func(Row) error) *Table {
-	return &Table{
-		source: t,
+func (t Table) Validate(vf func(Row) error) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			return func(row Row) (err error) {
 				if err = vf(row); err == nil {
@@ -270,9 +270,9 @@ func (t *Table) Validate(vf func(Row) error) *Table {
 }
 
 // Top specifies the number of Rows to pass down the pipeline before stopping the iteration.
-func (t *Table) Top(n int) *Table {
-	return &Table{
-		source: t,
+func (t Table) Top(n int) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			counter := n
 
@@ -289,9 +289,9 @@ func (t *Table) Top(n int) *Table {
 }
 
 // Drop specifies the number of Rows to ignore before passing the remaining rows down the pipeline.
-func (t *Table) Drop(n int) *Table {
-	return &Table{
-		source: t,
+func (t Table) Drop(n int) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			counter := n
 
@@ -309,9 +309,9 @@ func (t *Table) Drop(n int) *Table {
 
 // TakeWhile takes a predicate which gets applied to each Row upon iteration.
 // The iteration stops when the predicate returns 'false' for the first time.
-func (t *Table) TakeWhile(pred func(Row) bool) *Table {
-	return &Table{
-		source: t,
+func (t Table) TakeWhile(pred func(Row) bool) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			var done bool
 
@@ -328,9 +328,9 @@ func (t *Table) TakeWhile(pred func(Row) bool) *Table {
 
 // DropWhile, upon iteration, ignores all the Rows for as long as the specified predicate is true;
 // afterwards all the remaining Rows are passed down the pipeline.
-func (t *Table) DropWhile(pred func(Row) bool) *Table {
-	return &Table{
-		source: t,
+func (t Table) DropWhile(pred func(Row) bool) Table {
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			var yield bool
 
@@ -348,7 +348,7 @@ func (t *Table) DropWhile(pred func(Row) bool) *Table {
 // ToCsvFile iterates the input source  writing the selected columns to the file with the given name,
 // in "canonical" form with the header on the first line and with all the lines having the same number of fields,
 // using default settings for the underlying Writer from the encoding/csv package.
-func (t *Table) ToCsvFile(fileName string, columns ...string) error {
+func (t Table) ToCsvFile(fileName string, columns ...string) error {
 	if len(columns) == 0 {
 		panic("Empty columns list in ToCsvFile()")
 	}
@@ -371,25 +371,22 @@ func (t *Table) ToCsvFile(fileName string, columns ...string) error {
 }
 
 // ToMemory iterates the Table storing the result in memory.
-func (t *Table) ToMemory() (*Table, error) {
+func (t Table) ToMemory() (Table, error) {
 	var r rowSlice
 
-	if err := t.ForEach(func(row Row) error { r = append(r, row); return nil }); err != nil {
-		return nil, err
-	}
-
-	return Take(r), nil
+	err := t.ForEach(func(row Row) error { r = append(r, row); return nil })
+	return Take(r), err
 }
 
 // IndexOn iterates the input source building index on the specified columns.
 // Columns are taken from the specified list from left to the right.
-func (t *Table) IndexOn(columns ...string) (*Index, error) {
+func (t Table) IndexOn(columns ...string) (*Index, error) {
 	return createIndex(t, columns)
 }
 
 // UniqueIndexOn iterates the input source building unique index on the specified columns.
 // Columns are taken from the specified list from left to the right.
-func (t *Table) UniqueIndexOn(columns ...string) (*Index, error) {
+func (t Table) UniqueIndexOn(columns ...string) (*Index, error) {
 	return createUniqueIndex(t, columns)
 }
 
@@ -399,15 +396,15 @@ func (t *Table) UniqueIndexOn(columns ...string) (*Index, error) {
 // exist in the current Table.
 // Each row in the resulting table contains all the columns from both the current table and the index.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
-func (t *Table) Join(index *Index, columns ...string) *Table {
+func (t Table) Join(index *Index, columns ...string) Table {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
 		panic("Too many source columns in Join()")
 	}
 
-	return &Table{
-		source: t,
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			return func(row Row) (err error) {
 				var values []string
@@ -445,15 +442,15 @@ func mergeRows(left, right Row) Row {
 // Except returns a table containing all the rows not in the specified Index, unchanged. The specified
 // columns are matched against those from the index, in the order of specification. If no columns
 // are specified then the columns list is taken from the index.
-func (t *Table) Except(index *Index, columns ...string) *Table {
+func (t Table) Except(index *Index, columns ...string) Table {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
 		panic("Too many source columns in Except()")
 	}
 
-	return &Table{
-		source: t,
+	return Table{
+		exec: t.ForEach,
 		wrap: func(fn RowFunc) RowFunc {
 			return func(row Row) (err error) {
 				var values []string
@@ -534,7 +531,7 @@ func (index *Index) ForEach(fn RowFunc) (err error) {
 // Find returns a Table of all Rows from the Index that match the specified values
 // in the indexed columns, left to the right. The number of specified values may be less than
 // the number of the indexed columns.
-func (index *Index) Find(values ...string) *Table {
+func (index *Index) Find(values ...string) Table {
 	return Take(rowSlice(index.impl.find(values)))
 }
 
@@ -564,7 +561,7 @@ func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) err
 	return index.impl.dedup(resolve)
 }
 
-func createIndex(source DataSource, columns []string) (*Index, error) {
+func createIndex(t Table, columns []string) (*Index, error) {
 	switch len(columns) {
 	case 0:
 		panic("Empty column list in CreateIndex()")
@@ -579,7 +576,7 @@ func createIndex(source DataSource, columns []string) (*Index, error) {
 	index := &Index{indexImpl{columns: columns}}
 
 	// copy Rows with validation
-	if err := source.ForEach(func(row Row) error {
+	if err := t.ForEach(func(row Row) error {
 		for _, col := range columns {
 			if !row.HasColumn(col) {
 				return fmt.Errorf(`Missing column "%s" while creating an index`, col)
@@ -597,16 +594,16 @@ func createIndex(source DataSource, columns []string) (*Index, error) {
 	return index, nil
 }
 
-func createUniqueIndex(source DataSource, columns []string) (index *Index, err error) {
+func createUniqueIndex(t Table, columns []string) (index *Index, err error) {
 	// create index
-	if index, err = createIndex(source, columns); err != nil || len(index.impl.rows) < 2 {
+	if index, err = createIndex(t, columns); err != nil || len(index.impl.rows) < 2 {
 		return
 	}
 
 	// check for duplicates by linear search; not the best idea.
 	rows := index.impl.rows
 
-	for i := 1; i < len(index.impl.rows); i++ {
+	for i := 1; i < len(rows); i++ {
 		if equalRows(columns, rows[i-1], rows[i]) {
 			return nil, errors.New("Duplicate value while creating unique index: " + rows[i].SelectExisting(columns...).String())
 		}
