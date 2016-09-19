@@ -70,7 +70,7 @@ convenience when complex transformations are applied to each row during processi
 #### Interface `DataSource`
 Interface `DataSource` represents any source of one or more rows, like `.csv` file. The only defined
 operation on `DataSource` is iteration over the rows. The iteration is performed via an implementation of
-`ForEach` method which is expected to call the supplied function once per each row. The package contains
+`ForEach` method which is expected to call its parameter function once per each row. The package contains
 an implementation of the interface for `.csv` files.
 
 #### Type `Table`
@@ -83,14 +83,14 @@ The actual iteration over a table only happens when any of the following methods
 - `IndexOn`
 - `UniqueIndexOn`
 - `ToCsvFile`
-- `ToMemory`
+- `ToRows`
 
 A `Table` can also be joined with an `Index`, and this operation is lazy.
 
 #### Type `Index`
 Index is a sorted collection of rows. The sorting is performed on the columns specified when the index
 is created. Iteration over an index yields sorted sequence of rows. An `Index` can be joined with
-a `DataSource`. The type has operations for finding rows and creating sub-indices in O(log(n)) time.
+a `Table`. The type has operations for finding rows and creating sub-indices in O(log(n)) time.
 Another useful operation is resolving duplicates. Building an index takes O(n*log(n)) time, but before that
 the entire data source gets read into the memory so certain care should be taken when indexing
 huge datasets.

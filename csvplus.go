@@ -199,13 +199,40 @@ func (t Table) ForEach(fn RowFunc) error {
 	return t.exec(t.wrap(fn))
 }
 
-// Take is the starting point for fluent combination. It wraps any DataSource into a Table.
+// Take converts any DataSource into a Table.
 func Take(source DataSource) Table {
 	return Table{
 		exec: source.ForEach,
-		wrap: func(fn RowFunc) RowFunc { return fn },
+		wrap: passWrap,
 	}
 }
+
+// TakeRows converts a slice of Rows into a Table.
+func TakeRows(rows []Row) Table {
+	return Table{
+		exec: func(fn RowFunc) error {
+			for i, row := range rows {
+				switch err := fn(row.Clone()); err {
+				case nil:
+					continue
+				case io.EOF:
+					return nil
+				default:
+					return &DataSourceError{
+						Name: "In-memory table of Rows",
+						Line: uint64(uint(i)),
+						Err:  err,
+					}
+				}
+			}
+
+			return nil
+		},
+		wrap: passWrap,
+	}
+}
+
+func passWrap(fn RowFunc) RowFunc { return fn }
 
 // Transform is the most generic operation on a Row. It takes a function which
 // maps a Row to another Row or returns an error. Any error returned from that function
@@ -370,12 +397,12 @@ func (t Table) ToCsvFile(fileName string, columns ...string) error {
 	})
 }
 
-// ToMemory iterates the Table storing the result in memory.
-func (t Table) ToMemory() (Table, error) {
-	var r rowSlice
+// ToRows iterates the Table storing the result in a slice of Rows.
+func (t Table) ToRows() ([]Row, error) {
+	var rows []Row
 
-	err := t.ForEach(func(row Row) error { r = append(r, row); return nil })
-	return Take(r), err
+	err := t.ForEach(func(row Row) error { rows = append(rows, row); return nil })
+	return rows, err
 }
 
 // IndexOn iterates the input source building index on the specified columns.
@@ -498,24 +525,6 @@ func withCsvFileWriter(name string, fn func(*csv.Writer) error) (err error) {
 	return
 }
 
-// in-memory data source
-type rowSlice []Row
-
-func (source rowSlice) ForEach(fn RowFunc) error {
-	for _, row := range source {
-		switch err := fn(row.Clone()); err {
-		case nil:
-			continue
-		case io.EOF:
-			return nil
-		default:
-			return err
-		}
-	}
-
-	return nil
-}
-
 // Index is an in-memory data source with O(log(n)) complexity of search
 // on the indexed columns. Iteration over the Index yields a sequence of Rows sorted on the index.
 type Index struct {
@@ -525,14 +534,14 @@ type Index struct {
 // ForEach calls the supplied RowFunc once per each Row.
 // Rows are sorted by the values of the columns specified when the Index was created.
 func (index *Index) ForEach(fn RowFunc) (err error) {
-	return rowSlice(index.impl.rows).ForEach(fn)
+	return TakeRows(index.impl.rows).ForEach(fn)
 }
 
 // Find returns a Table of all Rows from the Index that match the specified values
 // in the indexed columns, left to the right. The number of specified values may be less than
 // the number of the indexed columns.
 func (index *Index) Find(values ...string) Table {
-	return Take(rowSlice(index.impl.find(values)))
+	return TakeRows(index.impl.find(values))
 }
 
 // SubIndex returns an Index containing only the rows where the values of the

@@ -572,7 +572,7 @@ func TestExcept(t *testing.T) {
 }
 
 func TestResolver(t *testing.T) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		t.Error(err)
@@ -581,9 +581,9 @@ func TestResolver(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		// copy source
-		var src rowSlice
+		src := make([]Row, len(source))
 
-		source.ForEach(func(row Row) error { src = append(src, row); return nil })
+		copy(src, source)
 
 		// add random number of duplicates
 		dup := src[rand.Intn(len(src))]
@@ -597,7 +597,7 @@ func TestResolver(t *testing.T) {
 		}
 
 		// index
-		index, err := Take(src).IndexOn("name", "surname")
+		index, err := TakeRows(src).IndexOn("name", "surname")
 
 		if err != nil {
 			t.Error(err)
@@ -789,7 +789,7 @@ func TestErrors(t *testing.T) {
 
 // benchmarks -------------------------------------------------------------------------------------
 func BenchmarkCreateSmallSingleIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -801,7 +801,7 @@ func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var index *Index
 
-		if index, err = source.UniqueIndexOn("id"); err != nil {
+		if index, err = TakeRows(source).UniqueIndexOn("id"); err != nil {
 			b.Error(err)
 			return
 		}
@@ -815,7 +815,7 @@ func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 }
 
 func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToMemory()
+	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -827,7 +827,7 @@ func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var index *Index
 
-		if index, err = source.IndexOn("cust_id", "prod_id"); err != nil {
+		if index, err = TakeRows(source).IndexOn("cust_id", "prod_id"); err != nil {
 			b.Error(err)
 			return
 		}
@@ -871,7 +871,7 @@ func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
 }
 
 func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToMemory()
+	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -890,7 +890,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := source.Join(index, "cust_id").ForEach(nop); err != nil {
+		if err := TakeRows(source).Join(index, "cust_id").ForEach(nop); err != nil {
 			b.Error(err)
 			return
 		}
@@ -898,7 +898,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 }
 
 func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToMemory()
+	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -917,7 +917,7 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := source.Join(index, "id").ForEach(nop); err != nil {
+		if err := TakeRows(source).Join(index, "id").ForEach(nop); err != nil {
 			b.Error(err)
 			return
 		}
