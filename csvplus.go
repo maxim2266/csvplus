@@ -398,10 +398,12 @@ func (t Table) ToCsvFile(fileName string, columns ...string) error {
 }
 
 // ToRows iterates the Table storing the result in a slice of Rows.
-func (t Table) ToRows() ([]Row, error) {
-	var rows []Row
+func (t Table) ToRows() (rows []Row, err error) {
+	err = t.ForEach(func(row Row) error {
+		rows = append(rows, row)
+		return nil
+	})
 
-	err := t.ForEach(func(row Row) error { rows = append(rows, row); return nil })
 	return rows, err
 }
 
