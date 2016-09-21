@@ -6,6 +6,12 @@
 Package `csvplus` extends the standard Go [encoding/csv](https://golang.org/pkg/encoding/csv/)
 package with fluent interface, lazy stream operations, indices and joins.
 
+The library is primarily designed for [ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)-like processes.
+It is mostly useful in places where the more advanced searching/joining capabilities of a fully-featured SQL
+database are not required, but the same time the data transformations needed still include SQL-like operations.
+
+##### License: BSD
+
 ### Examples
 
 Simple sequential processing:
@@ -46,10 +52,10 @@ return csvplus.Take(orders).
 	Join(customers, "cust_id").
 	Join(products).
 	ForEach(func(row csvplus.Row) error {
-		_, e := fmt.Printf("%s %s bought %s %ss for £%s each on %s\n",
-			row["name"], row["surname"], row["qty"], row["product"], row["price"], row["ts"])
 		// prints lines like:
 		//	John Doe bought 38 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
+		_, e := fmt.Printf("%s %s bought %s %ss for £%s each on %s\n",
+			row["name"], row["surname"], row["qty"], row["product"], row["price"], row["ts"])
 		return e
 	})
 ```
@@ -102,4 +108,3 @@ For more details see the [documentation](https://godoc.org/github.com/maxim2266/
 The project is in a usable state usually called "beta". Tested on Linux Mint 18 (based on Ubuntu 16.04).
 Go version 1.7.1.
 
-##### License: BSD

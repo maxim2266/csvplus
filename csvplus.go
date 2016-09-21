@@ -572,7 +572,7 @@ func (t Table) SelectColumns(columns ...string) Table {
 	}
 }
 
-// Index is an in-memory data source with O(log(n)) complexity of search
+// Index is a sorted collection of Rows with O(log(n)) complexity of search
 // on the indexed columns. Iteration over the Index yields a sequence of Rows sorted on the index.
 type Index struct {
 	impl indexImpl
