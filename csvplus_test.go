@@ -245,6 +245,121 @@ func TestIndexImpl(t *testing.T) {
 	}
 }
 
+func TestLongChain(t *testing.T) {
+	var err error
+	var products, orders *Index
+
+	orders, err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")).
+		IndexOn("cust_id")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	products, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "product", "price")).UniqueIndexOn("prod_id")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	people := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname", "born")
+
+	var n int
+
+	err = Take(people).Filter(func(row Row) bool {
+		year, e := strconv.Atoi(row.SafeGetValue("born", "???"))
+
+		if e != nil {
+			t.Error(e)
+			return false
+		}
+
+		return year > 1970
+	}).Map(func(row Row) Row {
+		delete(row, "born")
+		return row
+	}).Join(orders, "id").Map(func(row Row) Row {
+		delete(row, "ts")
+		delete(row, "order_id")
+		return row
+	}).Join(products).Map(func(row Row) Row {
+		delete(row, "prod_id")
+
+		if row["name"] == "Amelia" {
+			row["name"] = "Julia"
+		}
+
+		return row
+	}).Filter(Like(Row{"surname": "Smith"})).Top(10).ForEach(func(row Row) error {
+		if n++; n > 10 {
+			return errors.New("Too many rows")
+		}
+
+		if row["surname"] != "Smith" {
+			return errors.New(`Surname "Smith" not found`)
+		}
+
+		if row["name"] == "Amelia" {
+			return errors.New(`Name "Amelia" found`)
+		}
+
+		if vals := row.SelectExisting("born", "ts", "order_id", "prod_id"); len(vals) != 0 {
+			return errors.New("Some deleted fields are still there")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// check the original orders
+	n = 0
+
+	if err = orders.ForEach(func(row Row) error {
+		n++
+
+		if _, e := row.Select("order_id", "cust_id", "prod_id", "qty", "ts"); e != nil {
+			return e
+		}
+
+		return nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if n != len(ordersData) {
+		t.Errorf("Unexpected number of orders: %d instead of %d", n, len(ordersData))
+		return
+	}
+
+	// check the original products
+	n = 0
+
+	if err = products.ForEach(func(row Row) error {
+		n++
+
+		if _, e := row.Select("prod_id", "product", "price"); e != nil {
+			return e
+		}
+
+		return nil
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if n != len(stockItems) {
+		t.Errorf("Unexpected number of products: %d instead of %d", n, len(stockItems))
+		return
+	}
+}
+
 func TestSimpleUniqueJoin(t *testing.T) {
 	people := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
 	orders := CsvFileDataSource(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "qty")
