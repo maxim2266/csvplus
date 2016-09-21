@@ -26,8 +26,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// Package csvplus extends the standard Go encoding/csv package with stream processing,
-// fluent interface, lazy evaluation, indices and joins.
+// Package csvplus extends the standard Go encoding/csv package with fluent
+// interface, lazy stream processing operations, indices and joins.
 package csvplus
 
 import (

@@ -4,7 +4,7 @@
 [![Go report](http://goreportcard.com/badge/maxim2266/csvplus)](http://goreportcard.com/report/maxim2266/csvplus)
 
 Package `csvplus` extends the standard Go [encoding/csv](https://golang.org/pkg/encoding/csv/)
-package with fluent interface, lazy stream operations, indices and joins.
+package with fluent interface, lazy stream processing operations, indices and joins.
 
 The library is primarily designed for [ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)-like processes.
 It is mostly useful in places where the more advanced searching/joining capabilities of a fully-featured SQL
