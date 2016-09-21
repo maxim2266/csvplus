@@ -257,7 +257,8 @@ func TestLongChain(t *testing.T) {
 		return
 	}
 
-	products, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "product", "price")).UniqueIndexOn("prod_id")
+	products, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "product", "price")).
+		UniqueIndexOn("prod_id")
 
 	if err != nil {
 		t.Error(err)
@@ -268,49 +269,55 @@ func TestLongChain(t *testing.T) {
 
 	var n int
 
-	err = Take(people).Filter(func(row Row) bool {
-		year, e := strconv.Atoi(row.SafeGetValue("born", "???"))
+	err = Take(people).
+		Filter(func(row Row) bool {
+			year, e := strconv.Atoi(row.SafeGetValue("born", "???"))
 
-		if e != nil {
-			t.Error(e)
-			return false
-		}
+			if e != nil {
+				t.Error(e)
+				return false
+			}
 
-		return year > 1970
-	}).Map(func(row Row) Row {
-		delete(row, "born")
-		return row
-	}).Join(orders, "id").Map(func(row Row) Row {
-		delete(row, "ts")
-		delete(row, "order_id")
-		return row
-	}).Join(products).Map(func(row Row) Row {
-		delete(row, "prod_id")
+			return year > 1970
+		}).
+		SelectColumns("id", "name", "surname").
+		Join(orders, "id").
+		DropColumns("ts", "order_id", "cust_id").
+		Join(products).
+		DropColumns("prod_id").
+		Map(func(row Row) Row {
+			if row["name"] == "Amelia" {
+				row["name"] = "Julia"
+			}
 
-		if row["name"] == "Amelia" {
-			row["name"] = "Julia"
-		}
+			return row
+		}).
+		Filter(Like(Row{"surname": "Smith"})).
+		Top(10).
+		DropColumns("id").
+		ForEach(func(row Row) error {
+			if n++; n > 10 {
+				return errors.New("Too many rows")
+			}
 
-		return row
-	}).Filter(Like(Row{"surname": "Smith"})).Top(10).ForEach(func(row Row) error {
-		if n++; n > 10 {
-			return errors.New("Too many rows")
-		}
+			if row["surname"] != "Smith" {
+				return errors.New(`Surname "Smith" not found`)
+			}
 
-		if row["surname"] != "Smith" {
-			return errors.New(`Surname "Smith" not found`)
-		}
+			if row["name"] == "Amelia" {
+				return errors.New(`Name "Amelia" found`)
+			}
 
-		if row["name"] == "Amelia" {
-			return errors.New(`Name "Amelia" found`)
-		}
+			if vals := row.SelectExisting("born", "ts", "order_id", "prod_id", "cust_id"); len(vals) != 0 {
+				return errors.New("Some deleted fields are still there")
+			}
 
-		if vals := row.SelectExisting("born", "ts", "order_id", "prod_id"); len(vals) != 0 {
-			return errors.New("Some deleted fields are still there")
-		}
+			if len(row) != 5 { // name, surname, qty, product, price
+				return fmt.Errorf("Unexpected number of columns: %d instead of 5", len(row))
+			}
 
-		return nil
-	})
+			return nil
+		})
 
 	if err != nil {
 		t.Error(err)

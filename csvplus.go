@@ -531,6 +531,47 @@ func withCsvFileWriter(name string, fn func(*csv.Writer) error) (err error) {
 	return
 }
 
+// DropColumns removes the specifies columns from each row.
+func (t Table) DropColumns(columns ...string) Table {
+	if len(columns) == 0 {
+		panic("No columns specified in DropColumns()")
+	}
+
+	return Table{
+		exec: t.ForEach,
+		wrap: func(fn RowFunc) RowFunc {
+			return func(row Row) error {
+				for _, col := range columns {
+					delete(row, col)
+				}
+
+				return fn(row)
+			}
+		},
+	}
+}
+
+// SelectColumns leaves only the specified columns on each row. It is an error
+// if any of those columns does not exist.
+func (t Table) SelectColumns(columns ...string) Table {
+	if len(columns) == 0 {
+		panic("No columns specified in SelectColumns()")
+	}
+
+	return Table{
+		exec: t.ForEach,
+		wrap: func(fn RowFunc) RowFunc {
+			return func(row Row) (err error) {
+				if row, err = row.Select(columns...); err == nil {
+					err = fn(row)
+				}
+
+				return
+			}
+		},
+	}
+}
+
 // Index is an in-memory data source with O(log(n)) complexity of search
 // on the indexed columns. Iteration over the Index yields a sequence of Rows sorted on the index.
 type Index struct {
