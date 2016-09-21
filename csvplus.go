@@ -387,12 +387,16 @@ func (t Table) ToCsvFile(fileName string, columns ...string) error {
 		}
 
 		// body
-		return t.ForEach(func(row Row) error {
-			if values, err := row.SelectValues(columns...); err == nil {
-				return out.Write(values)
+		return t.ForEach(func(row Row) (e error) {
+			var values []string
+
+			if values, e = row.SelectValues(columns...); e == nil {
+				e = out.Write(values)
 			} else {
-				return fmt.Errorf(`Error writing file "%s": %s`, fileName, err)
+				e = fmt.Errorf(`Error writing file "%s": %s`, fileName, e)
 			}
+
+			return
 		})
 	})
 }
