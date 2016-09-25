@@ -271,7 +271,7 @@ func TestLongChain(t *testing.T) {
 
 	err = Take(people).
 		Filter(func(row Row) bool {
-			year, e := row.ColumnAsInt("born")
+			year, e := row.ValueAsInt("born")
 
 			if e != nil {
 				t.Error(e)
@@ -385,19 +385,19 @@ func TestSimpleUniqueJoin(t *testing.T) {
 		ForEach(func(row Row) (e error) {
 			var id, orderID, custID, qty int
 
-			if id, e = row.ColumnAsInt("id"); e != nil {
+			if id, e = row.ValueAsInt("id"); e != nil {
 				return
 			}
 
-			if orderID, e = row.ColumnAsInt("order_id"); e != nil {
+			if orderID, e = row.ValueAsInt("order_id"); e != nil {
 				return
 			}
 
-			if custID, e = row.ColumnAsInt("cust_id"); e != nil {
+			if custID, e = row.ValueAsInt("cust_id"); e != nil {
 				return
 			}
 
-			if qty, e = row.ColumnAsInt("qty"); e != nil {
+			if qty, e = row.ValueAsInt("qty"); e != nil {
 				return
 			}
 
@@ -530,7 +530,7 @@ func TestSimpleTotals(t *testing.T) {
 		var id, qty int
 		var e error
 
-		if id, e = row.ColumnAsInt("cust_id"); e != nil {
+		if id, e = row.ValueAsInt("cust_id"); e != nil {
 			return fmt.Errorf("cust_id: %s", e)
 		}
 
@@ -538,13 +538,13 @@ func TestSimpleTotals(t *testing.T) {
 			return fmt.Errorf("Invalid id: %d", id)
 		}
 
-		if qty, e = row.ColumnAsInt("qty"); e != nil {
+		if qty, e = row.ValueAsInt("qty"); e != nil {
 			return fmt.Errorf("qty: %s", e)
 		}
 
 		var price float64
 
-		if price, e = row.ColumnAsFloat64("price"); e != nil {
+		if price, e = row.ValueAsFloat64("price"); e != nil {
 			return fmt.Errorf("price: %s", e)
 		}
 
@@ -915,7 +915,7 @@ func TestNumericalConversions(t *testing.T) {
 	var intVal int
 	var err error
 
-	if intVal, err = row.ColumnAsInt("int"); err != nil {
+	if intVal, err = row.ValueAsInt("int"); err != nil {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -925,7 +925,7 @@ func TestNumericalConversions(t *testing.T) {
 		return
 	}
 
-	if _, err = row.ColumnAsInt("string"); err == nil {
+	if _, err = row.ValueAsInt("string"); err == nil {
 		t.Error("Missed error in integer conversion")
 		return
 	}
@@ -937,7 +937,7 @@ func TestNumericalConversions(t *testing.T) {
 
 	var floatVal float64
 
-	if floatVal, err = row.ColumnAsFloat64("float"); err != nil {
+	if floatVal, err = row.ValueAsFloat64("float"); err != nil {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -947,7 +947,7 @@ func TestNumericalConversions(t *testing.T) {
 		return
 	}
 
-	if _, err = row.ColumnAsFloat64("string"); err == nil {
+	if _, err = row.ValueAsFloat64("string"); err == nil {
 		t.Error("Missed error in float conversion")
 		return
 	}
@@ -1306,11 +1306,11 @@ func createAmountsTable() (amounts Table, err error) {
 				var price float64
 				var e error
 
-				if qty, e = row.ColumnAsInt("qty"); e != nil {
+				if qty, e = row.ValueAsInt("qty"); e != nil {
 					return nil, e
 				}
 
-				if price, e = row.ColumnAsFloat64("price"); e != nil {
+				if price, e = row.ValueAsFloat64("price"); e != nil {
 					return nil, e
 				}
 

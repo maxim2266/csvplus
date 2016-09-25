@@ -168,9 +168,9 @@ func (row Row) Clone() Row {
 	return r
 }
 
-// ColumnAsInt returns the value of the given column converted to integer type, or an error.
+// ValueAsInt returns the value of the given column converted to integer type, or an error.
 // The column must be present on the row.
-func (row Row) ColumnAsInt(column string) (res int, err error) {
+func (row Row) ValueAsInt(column string) (res int, err error) {
 	var val string
 	var found bool
 
@@ -190,9 +190,9 @@ func (row Row) ColumnAsInt(column string) (res int, err error) {
 	return
 }
 
-// ColumnAsFloat returns the value of the given column converted to floating point type, or an error.
+// ValueAsFloat64 returns the value of the given column converted to floating point type, or an error.
 // The column must be present on the row.
-func (row Row) ColumnAsFloat64(column string) (res float64, err error) {
+func (row Row) ValueAsFloat64(column string) (res float64, err error) {
 	var val string
 	var found bool
 
