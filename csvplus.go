@@ -38,6 +38,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -165,6 +166,50 @@ func (row Row) Clone() Row {
 	}
 
 	return r
+}
+
+// ColumnAsInt returns the value of the given column converted to integer type, or an error.
+// The column must be present on the row.
+func (row Row) ColumnAsInt(column string) (res int, err error) {
+	var val string
+	var found bool
+
+	if val, found = row[column]; !found {
+		err = fmt.Errorf(`Missing column "%s"`, column)
+		return
+	}
+
+	if res, err = strconv.Atoi(val); err != nil {
+		if e, ok := err.(*strconv.NumError); ok {
+			err = fmt.Errorf(`Column "%s": Cannot convert "%s" to integer: %s`, column, val, e.Err)
+		} else {
+			err = fmt.Errorf(`Column "%s": %s`, column, err.Error())
+		}
+	}
+
+	return
+}
+
+// ColumnAsFloat returns the value of the given column converted to floating point type, or an error.
+// The column must be present on the row.
+func (row Row) ColumnAsFloat64(column string) (res float64, err error) {
+	var val string
+	var found bool
+
+	if val, found = row[column]; !found {
+		err = fmt.Errorf(`Missing column "%s"`, column)
+		return
+	}
+
+	if res, err = strconv.ParseFloat(val, 64); err != nil {
+		if e, ok := err.(*strconv.NumError); ok {
+			err = fmt.Errorf(`Column "%s": Cannot convert "%s" to float: %s`, column, val, e.Err)
+		} else {
+			err = fmt.Errorf(`Column "%s": %s`, column, err.Error())
+		}
+	}
+
+	return
 }
 
 // RowFunc is the function type used when iterating Rows via ForEach() method.

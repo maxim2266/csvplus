@@ -271,7 +271,7 @@ func TestLongChain(t *testing.T) {
 
 	err = Take(people).
 		Filter(func(row Row) bool {
-			year, e := strconv.Atoi(row.SafeGetValue("born", "???"))
+			year, e := row.ColumnAsInt("born")
 
 			if e != nil {
 				t.Error(e)
@@ -385,19 +385,19 @@ func TestSimpleUniqueJoin(t *testing.T) {
 		ForEach(func(row Row) (e error) {
 			var id, orderID, custID, qty int
 
-			if id, e = strconv.Atoi(row.SafeGetValue("id", "???")); e != nil {
+			if id, e = row.ColumnAsInt("id"); e != nil {
 				return
 			}
 
-			if orderID, e = strconv.Atoi(row.SafeGetValue("order_id", "???")); e != nil {
+			if orderID, e = row.ColumnAsInt("order_id"); e != nil {
 				return
 			}
 
-			if custID, e = strconv.Atoi(row.SafeGetValue("cust_id", "???")); e != nil {
+			if custID, e = row.ColumnAsInt("cust_id"); e != nil {
 				return
 			}
 
-			if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+			if qty, e = row.ColumnAsInt("qty"); e != nil {
 				return
 			}
 
@@ -530,7 +530,7 @@ func TestSimpleTotals(t *testing.T) {
 		var id, qty int
 		var e error
 
-		if id, e = strconv.Atoi(row.SafeGetValue("cust_id", "???")); e != nil {
+		if id, e = row.ColumnAsInt("cust_id"); e != nil {
 			return fmt.Errorf("cust_id: %s", e)
 		}
 
@@ -538,13 +538,13 @@ func TestSimpleTotals(t *testing.T) {
 			return fmt.Errorf("Invalid id: %d", id)
 		}
 
-		if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+		if qty, e = row.ColumnAsInt("qty"); e != nil {
 			return fmt.Errorf("qty: %s", e)
 		}
 
 		var price float64
 
-		if price, e = strconv.ParseFloat(row.SafeGetValue("price", "???"), 64); e != nil {
+		if price, e = row.ColumnAsFloat64("price"); e != nil {
 			return fmt.Errorf("price: %s", e)
 		}
 
@@ -909,6 +909,55 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+func TestNumericalConversions(t *testing.T) {
+	row := Row{"int": "12345", "float": "3.1415926", "string": "xyz"}
+
+	var intVal int
+	var err error
+
+	if intVal, err = row.ColumnAsInt("int"); err != nil {
+		t.Error("Unexpected error:", err)
+		return
+	}
+
+	if intVal != 12345 {
+		t.Errorf("Unexpected value in integer conversion: %d instead of %s", intVal, row["int"])
+		return
+	}
+
+	if _, err = row.ColumnAsInt("string"); err == nil {
+		t.Error("Missed error in integer conversion")
+		return
+	}
+
+	if err.Error() != `Column "string": Cannot convert "xyz" to integer: invalid syntax` {
+		t.Error("Unexpected error message in integer conversion:", err)
+		return
+	}
+
+	var floatVal float64
+
+	if floatVal, err = row.ColumnAsFloat64("float"); err != nil {
+		t.Error("Unexpected error:", err)
+		return
+	}
+
+	if math.Abs(floatVal-3.1415926)/floatVal > 1e-6 {
+		t.Errorf("Unexpected value in float conversion: %d instead of %s", floatVal, row["float"])
+		return
+	}
+
+	if _, err = row.ColumnAsFloat64("string"); err == nil {
+		t.Error("Missed error in float conversion")
+		return
+	}
+
+	if err.Error() != `Column "string": Cannot convert "xyz" to float: invalid syntax` {
+		t.Error("Unexpected error message in float conversion:", err)
+		return
+	}
+}
+
 // benchmarks -------------------------------------------------------------------------------------
 func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
@@ -1257,11 +1306,11 @@ func createAmountsTable() (amounts Table, err error) {
 				var price float64
 				var e error
 
-				if qty, e = strconv.Atoi(row.SafeGetValue("qty", "???")); e != nil {
+				if qty, e = row.ColumnAsInt("qty"); e != nil {
 					return nil, e
 				}
 
-				if price, e = strconv.ParseFloat(row.SafeGetValue("price", "???"), 64); e != nil {
+				if price, e = row.ColumnAsFloat64("price"); e != nil {
 					return nil, e
 				}
 
