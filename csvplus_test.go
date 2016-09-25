@@ -943,7 +943,7 @@ func TestNumericalConversions(t *testing.T) {
 	}
 
 	if math.Abs(floatVal-3.1415926)/floatVal > 1e-6 {
-		t.Errorf("Unexpected value in float conversion: %d instead of %s", floatVal, row["float"])
+		t.Errorf("Unexpected value in float conversion: %f instead of %s", floatVal, row["float"])
 		return
 	}
 
