@@ -100,7 +100,7 @@ is created. Iteration over an index yields sorted sequence of rows. An `Index` c
 a `Table`. The type has operations for finding rows and creating sub-indices in O(log(n)) time.
 Another useful operation is resolving duplicates. Building an index takes O(n*log(n)) time, but before that
 the entire data source gets read into the memory so certain care should be taken when indexing
-huge datasets.
+huge datasets. An index can be stored to or loaded from a disk file.
 
 For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
 
