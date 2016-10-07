@@ -33,6 +33,7 @@ package csvplus
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -660,6 +661,58 @@ func (index *Index) SubIndex(values ...string) *Index {
 // - Return an error which will be passed back to the caller of ResolveDuplicates().
 func (index *Index) ResolveDuplicates(resolve func(rows []Row) (Row, error)) error {
 	return index.impl.dedup(resolve)
+}
+
+// WriteTo writes the index to the specified file.
+func (index *Index) WriteTo(fileName string) (err error) {
+	var file *os.File
+
+	if file, err = os.Create(fileName); err != nil {
+		return
+	}
+
+	defer func() {
+		if e := file.Close(); e != nil || err != nil {
+			os.Remove(fileName)
+
+			if err == nil {
+				err = e
+			}
+		}
+	}()
+
+	enc := gob.NewEncoder(file)
+
+	if err = enc.Encode(index.impl.columns); err == nil {
+		err = enc.Encode(index.impl.rows)
+	}
+
+	return
+}
+
+// LoadIndex reads index from the specified file.
+func LoadIndex(fileName string) (*Index, error) {
+	var file *os.File
+	var err error
+
+	if file, err = os.Open(fileName); err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+
+	index := new(Index)
+	dec := gob.NewDecoder(file)
+
+	if err = dec.Decode(&index.impl.columns); err != nil {
+		return nil, err
+	}
+
+	if err = dec.Decode(&index.impl.rows); err != nil {
+		return nil, err
+	}
+
+	return index, nil
 }
 
 func createIndex(t Table, columns []string) (*Index, error) {

@@ -178,7 +178,7 @@ func TestWriteFile(t *testing.T) {
 	src := CsvFileDataSource(tempFiles["people"]).SelectColumns(peopleHeader...)
 
 	err := anyFrom(
-		func() (e error) { tmpFileName, e = createTempFile(); return },
+		func() (e error) { tmpFileName, e = createTempFile(""); return },
 		func() (e error) { e = Take(src).ToCsvFile(tmpFileName, peopleHeader...); return },
 		func() (e error) { file1, e = ioutil.ReadFile(tmpFileName); return },
 		func() (e error) { file2, e = ioutil.ReadFile(tempFiles["people"]); return },
@@ -958,6 +958,62 @@ func TestNumericalConversions(t *testing.T) {
 	}
 }
 
+func TestIndexStore(t *testing.T) {
+	const namePrefix = "index"
+
+	// read data and build index
+	index, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).IndexOn("id")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// write index
+	if tempFiles[namePrefix], err = createTempFile(namePrefix); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err = index.WriteTo(tempFiles[namePrefix]); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// read index
+	var index2 *Index
+
+	if index2, err = LoadIndex(tempFiles[namePrefix]); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// compare column names
+	if len(index.impl.columns) != len(index2.impl.columns) {
+		t.Errorf("Column number mismatch: %d instead of %d", len(index2.impl.columns), len(index.impl.columns))
+		return
+	}
+
+	for i, c := range index.impl.columns {
+		if c != index2.impl.columns[i] {
+			t.Errorf(`Unexpected column name: "%s" instead of "%s"`, index2.impl.columns[i], c)
+			return
+		}
+	}
+
+	// compare rows
+	if len(index.impl.rows) != len(index2.impl.rows) {
+		t.Errorf("Rows number mismatch^ %d instead of %d", len(index2.impl.rows), len(index.impl.rows))
+		return
+	}
+
+	for i, row := range index.impl.rows {
+		if row.String() != index2.impl.rows[i].String() {
+			t.Errorf(`Mismatching rows at %d:\n\t%s\n\t%s`, row.String(), index2.impl.rows[i].String())
+		}
+	}
+}
+
 // benchmarks -------------------------------------------------------------------------------------
 func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
@@ -1280,10 +1336,10 @@ func sortedCopy(list []string) (r []string) {
 	return
 }
 
-func createTempFile() (name string, err error) {
+func createTempFile(prefix string) (name string, err error) {
 	var file *os.File
 
-	if file, err = ioutil.TempFile("", name); err != nil {
+	if file, err = ioutil.TempFile("", prefix); err != nil {
 		return
 	}
 
@@ -1339,7 +1395,7 @@ func shouldPanic(fn func()) error {
 }
 
 // temporary files --------------------------------------------------------------------------------
-var tempFiles = make(map[string]string, 5)
+var tempFiles = make(map[string]string, 10)
 
 func deleteTemps() {
 	for _, name := range tempFiles {
