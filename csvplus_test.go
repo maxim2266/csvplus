@@ -1009,7 +1009,7 @@ func TestIndexStore(t *testing.T) {
 
 	for i, row := range index.impl.rows {
 		if row.String() != index2.impl.rows[i].String() {
-			t.Errorf(`Mismatching rows at %d:\n\t%s\n\t%s`, row.String(), index2.impl.rows[i].String())
+			t.Errorf(`Mismatching rows at %d:\n\t%s\n\t%s`, i, row.String(), index2.impl.rows[i].String())
 		}
 	}
 }
