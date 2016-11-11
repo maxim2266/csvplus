@@ -626,7 +626,7 @@ type Index struct {
 
 // ForEach calls the supplied RowFunc once per each Row.
 // Rows are sorted by the values of the columns specified when the Index was created.
-func (index *Index) ForEach(fn RowFunc) (err error) {
+func (index *Index) ForEach(fn RowFunc) error {
 	return TakeRows(index.impl.rows).ForEach(fn)
 }
 
