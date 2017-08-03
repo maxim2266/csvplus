@@ -253,6 +253,15 @@ func Take(source DataSource) Table {
 	}
 }
 
+// TakeFunc converts any function of type "func(RowFunc) error" into a Table. Useful in situations
+// where the data source can be more naturally represented as a function.
+func TakeFunc(fn func(RowFunc) error) Table {
+	return Table{
+		exec: fn,
+		wrap: passWrap,
+	}
+}
+
 // TakeRows converts a slice of Rows into a Table.
 func TakeRows(rows []Row) Table {
 	return Table{
@@ -551,7 +560,7 @@ func withCsvFileWriter(name string, fn func(*csv.Writer) error) (err error) {
 	var file *os.File
 
 	if file, err = os.Create(name); err != nil {
-		return err
+		return
 	}
 
 	defer func() {
