@@ -213,303 +213,318 @@ func (row Row) ValueAsFloat64(column string) (res float64, err error) {
 	return
 }
 
-// RowFunc is the function type used when iterating Rows via ForEach() method.
+// RowFunc is the function type used when iterating Rows.
 type RowFunc func(Row) error
 
-// DataSource is the interface to any data that can be represented as a sequence of Rows.
-type DataSource interface {
-	// ForEach should call the given RowFunc once per each Row. The iteration should
-	// continue for as long as the RowFunc returns 'nil'. When RowFunc returns
-	// a non-nil error, this function should stop iteration and return an error,
-	// which may be either the original one, or some other error. The special
-	// value of io.EOF should be treated as a 'stop iteration' command, in which
-	// case this function should return 'nil' error. Given that Rows can be modified
-	// by the RowFunc, the implementations should only pass copies of their
-	// underlying rows to the supplied RowFunc.
-	ForEach(RowFunc) error
-}
+// DataSource is the iterator type used throughout this library. The iterator
+// calls the given RowFunc once per each row. The iteration continues until
+// either the data source is exhausted or the supplied RowFunc returns a non-nil error, in
+// which case the error is returned back to the caller of the iterator. A special case of io.EOF simply
+// stops the iteration and the iterator function returns nil error.
+type DataSource func(RowFunc) error
 
-// Table implements sequential operations on a given data source as well as
-// the DataSource interface itself and other iterating methods. All sequential
-// operations are 'lazy', i.e. they are not invoked immediately, but instead
-// they return a new table which, when iterated over, invokes the particular
-// operation. The operations can be chained using so called fluent interface.
-type Table struct {
-	exec func(RowFunc) error
-	wrap func(RowFunc) RowFunc
-}
-
-// ForEach iterates over the Table invoking all the operations in the processing pipeline,
-// and calls the specified RowFunc on each resulting Row.
-func (t Table) ForEach(fn RowFunc) error {
-	return t.exec(t.wrap(fn))
-}
-
-// Take converts any DataSource into a Table.
-func Take(source DataSource) Table {
-	return Table{
-		exec: source.ForEach,
-		wrap: passWrap,
+// TakeRows converts a slice of Rows to a DataSource.
+func TakeRows(rows []Row) DataSource {
+	return func(fn RowFunc) error {
+		return iterate(rows, fn)
 	}
 }
 
-// TakeFunc converts any function of type "func(RowFunc) error" into a Table. Useful in situations
-// where the data source can be more naturally represented as a function.
-func TakeFunc(fn func(RowFunc) error) Table {
-	return Table{
-		exec: fn,
-		wrap: passWrap,
+// the core iteration
+func iterate(rows []Row, fn RowFunc) (err error) {
+	var row Row
+	var i int
+
+	for i, row = range rows {
+		if err = fn(row.Clone()); err != nil {
+			break
+		}
 	}
+
+	switch err {
+	case nil:
+		// nothing to do
+	case io.EOF:
+		err = nil // end of iteration
+	default:
+		// wrap error
+		err = &DataSourceError{
+			Name: "In-memory table of Rows",
+			Line: uint64(i),
+			Err:  err,
+		}
+	}
+
+	return
 }
 
-// TakeRows converts a slice of Rows into a Table.
-func TakeRows(rows []Row) Table {
-	return Table{
-		exec: func(fn RowFunc) error {
-			for i, row := range rows {
-				switch err := fn(row.Clone()); err {
-				case nil:
-					continue
-				case io.EOF:
-					return nil
-				default:
-					return &DataSourceError{
-						Name: "In-memory table of Rows",
-						Line: uint64(uint(i)),
-						Err:  err,
-					}
-				}
-			}
-
-			return nil
-		},
-		wrap: passWrap,
-	}
+// Take converts anything with Iterate method to a DataSource.
+func Take(src interface {
+	Iterate(fn RowFunc) error
+}) DataSource {
+	return src.Iterate
 }
-
-func passWrap(fn RowFunc) RowFunc { return fn }
 
 // Transform is the most generic operation on a Row. It takes a function which
-// maps a Row to another Row or returns an error. Any error returned from that function
+// maps a Row to another Row or an error. Any error returned from that function
 // stops the iteration, otherwise the returned Row, if not empty, gets passed
 // down to the next stage of the processing pipeline.
-func (t Table) Transform(trans func(Row) (Row, error)) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				if row, err = trans(row); err == nil && len(row) > 0 {
-					err = fn(row)
-				}
-
-				return
+func (src DataSource) Transform(trans func(Row) (Row, error)) DataSource {
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			if row, err = trans(row); err == nil && len(row) > 0 {
+				err = fn(row)
 			}
-		},
+
+			return
+		})
 	}
 }
 
 // Filter takes a predicate which, when applied to a Row, decides if that Row
 // should be passed down for further processing. The predicate should return 'true' to pass the Row.
-func (t Table) Filter(pred func(Row) bool) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				if pred(row) {
-					err = fn(row)
-				}
-
-				return
+func (src DataSource) Filter(pred func(Row) bool) DataSource {
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			if pred(row) {
+				err = fn(row)
 			}
-		},
+
+			return
+		})
 	}
 }
 
 // Map takes a function which gets applied to each Row when the source is iterated over. The function
 // may return a modified input Row, or an entirely new Row.
-func (t Table) Map(mf func(Row) Row) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc { return func(row Row) error { return fn(mf(row)) } },
+func (src DataSource) Map(mf func(Row) Row) DataSource {
+	return func(fn RowFunc) error {
+		return src(func(row Row) error {
+			return fn(mf(row))
+		})
 	}
 }
 
 // Validate takes a function which checks every Row upon iteration and returns an error
 // if the validation fails. The iteration stops at the first error encountered.
-func (t Table) Validate(vf func(Row) error) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				if err = vf(row); err == nil {
-					err = fn(row)
-				}
-
-				return
+func (src DataSource) Validate(vf func(Row) error) DataSource {
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			if err = vf(row); err == nil {
+				err = fn(row)
 			}
-		},
+
+			return
+		})
 	}
 }
 
 // Top specifies the number of Rows to pass down the pipeline before stopping the iteration.
-func (t Table) Top(n int) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			counter := n
+func (src DataSource) Top(n uint64) DataSource {
+	return func(fn RowFunc) error {
+		counter := n
 
-			return func(row Row) error {
-				if counter <= 0 {
-					return io.EOF
-				}
-
-				counter--
-				return fn(row)
+		return src(func(row Row) error {
+			if counter == 0 {
+				return io.EOF
 			}
-		},
+
+			counter--
+			return fn(row)
+		})
 	}
 }
 
 // Drop specifies the number of Rows to ignore before passing the remaining rows down the pipeline.
-func (t Table) Drop(n int) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			counter := n
+func (src DataSource) Drop(n uint64) DataSource {
+	return func(fn RowFunc) error {
+		counter := n
 
-			return func(row Row) error {
-				if counter <= 0 {
-					return fn(row)
-				}
-
-				counter--
-				return nil
+		return src(func(row Row) error {
+			if counter == 0 {
+				return fn(row)
 			}
-		},
+
+			counter--
+			return nil
+		})
 	}
 }
 
 // TakeWhile takes a predicate which gets applied to each Row upon iteration.
 // The iteration stops when the predicate returns 'false' for the first time.
-func (t Table) TakeWhile(pred func(Row) bool) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			var done bool
+func (src DataSource) TakeWhile(pred func(Row) bool) DataSource {
+	return func(fn RowFunc) error {
+		var done bool
 
-			return func(row Row) error {
-				if done = done || !pred(row); done {
-					return io.EOF
-				}
-
-				return fn(row)
+		return src(func(row Row) error {
+			if done = (done || !pred(row)); done {
+				return io.EOF
 			}
-		},
+
+			return fn(row)
+		})
 	}
 }
 
 // DropWhile ignores all the Rows for as long as the specified predicate is true;
 // afterwards all the remaining Rows are passed down the pipeline.
-func (t Table) DropWhile(pred func(Row) bool) Table {
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			var yield bool
+func (src DataSource) DropWhile(pred func(Row) bool) DataSource {
+	return func(fn RowFunc) error {
+		var yield bool
 
-			return func(row Row) (err error) {
-				if yield = yield || !pred(row); yield {
-					err = fn(row)
-				}
-
-				return
-			}
-		},
-	}
-}
-
-// ToCsvFile iterates the input source  writing the selected columns to the file with the given name,
-// in "canonical" form with the header on the first line and with all the lines having the same number of fields,
-// using default settings for the underlying Writer from the encoding/csv package.
-func (t Table) ToCsvFile(fileName string, columns ...string) error {
-	if len(columns) == 0 {
-		panic("Empty columns list in ToCsvFile()")
-	}
-
-	return withCsvFileWriter(fileName, func(out *csv.Writer) error {
-		// header
-		if err := out.Write(columns); err != nil {
-			return fmt.Errorf(`Error writing file "%s": %s`, fileName, err)
-		}
-
-		// body
-		return t.ForEach(func(row Row) (e error) {
-			var values []string
-
-			if values, e = row.SelectValues(columns...); e == nil {
-				e = out.Write(values)
-			} else {
-				e = fmt.Errorf(`Error writing file "%s": %s`, fileName, e)
+		return src(func(row Row) (err error) {
+			if yield = (yield || !pred(row)); yield {
+				err = fn(row)
 			}
 
 			return
 		})
-	})
+	}
 }
 
-// ToRows iterates the Table storing the result in a slice of Rows.
-func (t Table) ToRows() (rows []Row, err error) {
-	err = t.ForEach(func(row Row) error {
+// ToCsv iterates the data source and writes the selected columns in .csv format to the given io.Writer.
+// The data are written in the "canonical" form with the header on the first line and with all the lines
+// having the same number of fields, using default settings for the underlying csv.Writer.
+func (src DataSource) ToCsv(out io.Writer, columns ...string) (err error) {
+	if len(columns) == 0 {
+		panic("Empty column list in ToCsv() function")
+	}
+
+	w := csv.NewWriter(out)
+
+	// header
+	if err = w.Write(columns); err == nil {
+		// rows
+		err = src(func(row Row) (e error) {
+			var values []string
+
+			if values, e = row.SelectValues(columns...); e == nil {
+				e = w.Write(values)
+			}
+
+			return
+		})
+	}
+
+	if err == nil {
+		w.Flush()
+		err = w.Error()
+	}
+
+	return
+}
+
+// ToCsv iterates the data source and writes the selected columns in .csv format to the given file.
+// The data are written in the "canonical" form with the header on the first line and with all the lines
+// having the same number of fields, using default settings for the underlying csv.Writer.
+func (src DataSource) ToCsvFile(name string, columns ...string) (err error) {
+	var file *os.File
+
+	if file, err = os.Create(name); err != nil {
+		return
+	}
+
+	defer func() {
+		if e := file.Close(); e != nil && err == nil {
+			err = e
+		}
+
+		if err != nil {
+			os.Remove(name)
+		}
+	}()
+
+	err = src.ToCsv(file, columns...)
+	return
+}
+
+// ToRows iterates the DataSource storing the result in a slice of Rows.
+func (src DataSource) ToRows() (rows []Row, err error) {
+	err = src(func(row Row) error {
 		rows = append(rows, row)
 		return nil
 	})
 
-	return rows, err
+	return
 }
 
-// IndexOn iterates the input source building index on the specified columns.
+// DropColumns removes the specifies columns from each row.
+func (src DataSource) DropColumns(columns ...string) DataSource {
+	if len(columns) == 0 {
+		panic("No columns specified in DropColumns()")
+	}
+
+	return func(fn RowFunc) error {
+		return src(func(row Row) error {
+			for _, col := range columns {
+				delete(row, col)
+			}
+
+			return fn(row)
+		})
+	}
+}
+
+// SelectColumns leaves only the specified columns on each row. It is an error
+// if any such column does not exist.
+func (src DataSource) SelectColumns(columns ...string) DataSource {
+	if len(columns) == 0 {
+		panic("No columns specified in SelectColumns()")
+	}
+
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			if row, err = row.Select(columns...); err == nil {
+				err = fn(row)
+			}
+
+			return
+		})
+	}
+}
+
+// IndexOn iterates the input source, building index on the specified columns.
 // Columns are taken from the specified list from left to the right.
-func (t Table) IndexOn(columns ...string) (*Index, error) {
-	return createIndex(t, columns)
+func (src DataSource) IndexOn(columns ...string) (*Index, error) {
+	return createIndex(src, columns)
 }
 
-// UniqueIndexOn iterates the input source building unique index on the specified columns.
+// UniqueIndexOn iterates the input source, building unique index on the specified columns.
 // Columns are taken from the specified list from left to the right.
-func (t Table) UniqueIndexOn(columns ...string) (*Index, error) {
-	return createUniqueIndex(t, columns)
+func (src DataSource) UniqueIndexOn(columns ...string) (*Index, error) {
+	return createUniqueIndex(src, columns)
 }
 
-// Join returns a Table which is a join between the current Table and the specified
+// Join returns a DataSource which is a join between the current DataSource and the specified
 // Index. The specified columns are matched against those from the index, in the order of specification.
 // Empty 'columns' list yields a join on the columns from the Index (aka "natural join") which all must
-// exist in the current Table.
+// exist in the current DataSource.
 // Each row in the resulting table contains all the columns from both the current table and the index.
 // This is a lazy operation, the actual join is performed only when the resulting table is iterated over.
-func (t Table) Join(index *Index, columns ...string) Table {
+func (src DataSource) Join(index *Index, columns ...string) DataSource {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
 		panic("Too many source columns in Join()")
 	}
 
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				var values []string
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			var values []string
 
-				if values, err = row.SelectValues(columns...); err == nil {
-					n := len(index.impl.rows)
+			if values, err = row.SelectValues(columns...); err == nil {
+				n := len(index.impl.rows)
 
-					for i := index.impl.first(values); i < n && !index.impl.cmp(i, values, false); i++ {
-						if err = fn(mergeRows(index.impl.rows[i], row)); err != nil {
-							break
-						}
+				for i := index.impl.first(values); i < n && !index.impl.cmp(i, values, false); i++ {
+					if err = fn(mergeRows(index.impl.rows[i], row)); err != nil {
+						break
 					}
 				}
-
-				return
 			}
-		},
+
+			return
+		})
 	}
 }
 
@@ -530,100 +545,25 @@ func mergeRows(left, right Row) Row {
 // Except returns a table containing all the rows not in the specified Index, unchanged. The specified
 // columns are matched against those from the index, in the order of specification. If no columns
 // are specified then the columns list is taken from the index.
-func (t Table) Except(index *Index, columns ...string) Table {
+func (src DataSource) Except(index *Index, columns ...string) DataSource {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
 		panic("Too many source columns in Except()")
 	}
 
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				var values []string
+	return func(fn RowFunc) error {
+		return src(func(row Row) (err error) {
+			var values []string
 
-				if values, err = row.SelectValues(columns...); err == nil {
-					if !index.impl.has(values) {
-						err = fn(row)
-					}
-				}
-
-				return
-			}
-		},
-	}
-}
-
-// helper function for handling resources associated with an open .csv file
-func withCsvFileWriter(name string, fn func(*csv.Writer) error) (err error) {
-	var file *os.File
-
-	if file, err = os.Create(name); err != nil {
-		return
-	}
-
-	defer func() {
-		if e := file.Close(); e != nil && err == nil {
-			err = e
-		}
-
-		if err != nil {
-			os.Remove(name)
-		}
-	}()
-
-	out := csv.NewWriter(file)
-
-	defer func() {
-		if err == nil {
-			out.Flush()
-			err = out.Error()
-		}
-	}()
-
-	err = fn(out)
-	return
-}
-
-// DropColumns removes the specifies columns from each row.
-func (t Table) DropColumns(columns ...string) Table {
-	if len(columns) == 0 {
-		panic("No columns specified in DropColumns()")
-	}
-
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) error {
-				for _, col := range columns {
-					delete(row, col)
-				}
-
-				return fn(row)
-			}
-		},
-	}
-}
-
-// SelectColumns leaves only the specified columns on each row. It is an error
-// if any of those columns does not exist.
-func (t Table) SelectColumns(columns ...string) Table {
-	if len(columns) == 0 {
-		panic("No columns specified in SelectColumns()")
-	}
-
-	return Table{
-		exec: t.ForEach,
-		wrap: func(fn RowFunc) RowFunc {
-			return func(row Row) (err error) {
-				if row, err = row.Select(columns...); err == nil {
+			if values, err = row.SelectValues(columns...); err == nil {
+				if !index.impl.has(values) {
 					err = fn(row)
 				}
-
-				return
 			}
-		},
+
+			return
+		})
 	}
 }
 
@@ -633,16 +573,16 @@ type Index struct {
 	impl indexImpl
 }
 
-// ForEach calls the supplied RowFunc once per each Row.
-// Rows are sorted by the values of the columns specified when the Index was created.
-func (index *Index) ForEach(fn RowFunc) error {
-	return TakeRows(index.impl.rows).ForEach(fn)
+// Iterate iterates over all rows of the index. The rows are sorted by the values of the columns
+// specified when the Index was created.
+func (index *Index) Iterate(fn RowFunc) error {
+	return iterate(index.impl.rows, fn)
 }
 
-// Find returns a Table of all Rows from the Index that match the specified values
+// Find returns a DataSource of all Rows from the Index that match the specified values
 // in the indexed columns, left to the right. The number of specified values may be less than
 // the number of the indexed columns.
-func (index *Index) Find(values ...string) Table {
+func (index *Index) Find(values ...string) DataSource {
 	return TakeRows(index.impl.find(values))
 }
 
@@ -724,7 +664,7 @@ func LoadIndex(fileName string) (*Index, error) {
 	return index, nil
 }
 
-func createIndex(t Table, columns []string) (*Index, error) {
+func createIndex(src DataSource, columns []string) (*Index, error) {
 	switch len(columns) {
 	case 0:
 		panic("Empty column list in CreateIndex()")
@@ -739,7 +679,7 @@ func createIndex(t Table, columns []string) (*Index, error) {
 	index := &Index{indexImpl{columns: columns}}
 
 	// copy Rows with validation
-	if err := t.ForEach(func(row Row) error {
+	if err := src(func(row Row) error {
 		for _, col := range columns {
 			if !row.HasColumn(col) {
 				return fmt.Errorf(`Missing column "%s" while creating an index`, col)
@@ -757,9 +697,9 @@ func createIndex(t Table, columns []string) (*Index, error) {
 	return index, nil
 }
 
-func createUniqueIndex(t Table, columns []string) (index *Index, err error) {
+func createUniqueIndex(src DataSource, columns []string) (index *Index, err error) {
 	// create index
-	if index, err = createIndex(t, columns); err != nil || len(index.impl.rows) < 2 {
+	if index, err = createIndex(src, columns); err != nil || len(index.impl.rows) < 2 {
 		return
 	}
 
@@ -939,9 +879,9 @@ func (index *indexImpl) cmp(i int, values []string, eq bool) bool {
 	return eq
 }
 
-// CsvDataSource is an implementation of the DataSource interface that reads its
+// File is an implementation of the DataSource interface that reads its
 // data from a .csv file.
-type CsvDataSource struct {
+type File struct {
 	name                         string
 	delimiter, comment           rune
 	numFields                    int
@@ -950,36 +890,36 @@ type CsvDataSource struct {
 	headerFromFile               bool
 }
 
-// CsvFileDataSource constructs a new CsvDataSource bound to the specified
-// file name and with the default csv.Reader settings.
-func CsvFileDataSource(name string) *CsvDataSource {
-	return &CsvDataSource{
+// FromFile constructs a new File bound to the specified file name and with the default
+// csv.Reader settings.
+func FromFile(name string) *File {
+	return &File{
 		name:      name,
 		delimiter: ',',
 	}
 }
 
 // Delimiter sets the symbol to be used as a field delimiter in the input file.
-func (s *CsvDataSource) Delimiter(c rune) *CsvDataSource {
+func (s *File) Delimiter(c rune) *File {
 	s.delimiter = c
 	return s
 }
 
 // CommentChar sets the symbol that starts a comment in the input file.
-func (s *CsvDataSource) CommentChar(c rune) *CsvDataSource {
+func (s *File) CommentChar(c rune) *File {
 	s.comment = c
 	return s
 }
 
 // LazyQuotes specifies that a quote may appear in an unquoted field and a
 // non-doubled quote may appear in a quoted field of the input file.
-func (s *CsvDataSource) LazyQuotes() *CsvDataSource {
+func (s *File) LazyQuotes() *File {
 	s.lazyQuotes = true
 	return s
 }
 
 // TrimLeadingSpace specifies that the leading white space in a field should be ignored.
-func (s *CsvDataSource) TrimLeadingSpace() *CsvDataSource {
+func (s *File) TrimLeadingSpace() *File {
 	s.trimLeadingSpace = true
 	return s
 }
@@ -987,7 +927,7 @@ func (s *CsvDataSource) TrimLeadingSpace() *CsvDataSource {
 // AssumeHeader sets the header for those input files that do not have their column
 // names specified on the first line of the file. The header specification is a map
 // from assigned column names to their corresponding column indices.
-func (s *CsvDataSource) AssumeHeader(spec map[string]int) *CsvDataSource {
+func (s *File) AssumeHeader(spec map[string]int) *File {
 	if len(spec) == 0 {
 		panic("Empty header spec")
 	}
@@ -1009,7 +949,7 @@ func (s *CsvDataSource) AssumeHeader(spec map[string]int) *CsvDataSource {
 // The header specification is a map from expected column names to their corresponding
 // column indices. A negative value for an index means that the real value of the index
 // will be found searching the first line of the file for the specified column name.
-func (s *CsvDataSource) ExpectHeader(spec map[string]int) *CsvDataSource {
+func (s *File) ExpectHeader(spec map[string]int) *File {
 	if len(spec) == 0 {
 		panic("Empty header spec")
 	}
@@ -1028,7 +968,7 @@ func (s *CsvDataSource) ExpectHeader(spec map[string]int) *CsvDataSource {
 // The header specification is built by searching the first line of the input file
 // for the names specified and recording the indices of those columns. It is an error
 // if any of the column names is not found.
-func (s *CsvDataSource) SelectColumns(names ...string) *CsvDataSource {
+func (s *File) SelectColumns(names ...string) *File {
 	if len(names) == 0 {
 		panic("Empty header spec")
 	}
@@ -1049,27 +989,27 @@ func (s *CsvDataSource) SelectColumns(names ...string) *CsvDataSource {
 
 // NumFields sets the expected number of fields on each line of the input file.
 // It is an error if any line from the input file does not have that exact number of fields.
-func (s *CsvDataSource) NumFields(n int) *CsvDataSource {
+func (s *File) NumFields(n int) *File {
 	s.numFields = n
 	return s
 }
 
 // NumFieldsAuto specifies that the number of fields on each line must match that of
 // the first line of the input file.
-func (s *CsvDataSource) NumFieldsAuto() *CsvDataSource {
+func (s *File) NumFieldsAuto() *File {
 	return s.NumFields(0)
 }
 
 // NumFieldsAny specifies that each line of the input file may have different number
 // of fields. Lines shorter than the maximum column index in the header specification will be padded
 // with empty fields.
-func (s *CsvDataSource) NumFieldsAny() *CsvDataSource {
+func (s *File) NumFieldsAny() *File {
 	return s.NumFields(-1)
 }
 
-// ForEach reads the input file line by line, converts each line to a Row and calls
+// Iterate reads the input file line by line, converts each line to a Row and calls
 // the supplied RowFunc. ForEach is goroutine-safe and may be called multiple times.
-func (s *CsvDataSource) ForEach(fn RowFunc) error {
+func (s *File) Iterate(fn RowFunc) error {
 	var lineNo uint64
 
 	// input file
@@ -1133,7 +1073,7 @@ loop:
 }
 
 // build header spec from the first line of the input file
-func (s *CsvDataSource) makeHeader(reader *csv.Reader) (map[string]int, error) {
+func (s *File) makeHeader(reader *csv.Reader) (map[string]int, error) {
 	line, err := reader.Read()
 
 	if err != nil {
@@ -1177,7 +1117,7 @@ func (s *CsvDataSource) makeHeader(reader *csv.Reader) (map[string]int, error) {
 }
 
 // annotate error with file name and line number
-func (s *CsvDataSource) mapError(err error, lineNo uint64) error {
+func (s *File) mapError(err error, lineNo uint64) error {
 	switch e := err.(type) {
 	case *csv.ParseError:
 		return &DataSourceError{
@@ -1200,7 +1140,7 @@ func (s *CsvDataSource) mapError(err error, lineNo uint64) error {
 	}
 }
 
-// DataSourceError is the type of the error returned from CsvDataSource.ForEach method.
+// DataSourceError is the type of the error returned from File.ForEach method.
 type DataSourceError struct {
 	Name string
 	Line uint64

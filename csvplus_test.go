@@ -118,27 +118,27 @@ func TestSimpleDataSource(t *testing.T) {
 	var n int
 
 	hdr := sortedCopy(peopleHeader)
-	src := CsvFileDataSource(tempFiles["people"]).SelectColumns(hdr...)
-	err := Take(src).
-		Filter(Any(Like(Row{"name": "Jack"}), Like(Row{"name": "Amelia"}))).
-		ForEach(func(row Row) error {
-			if name := row.SafeGetValue("name", ""); name != "Jack" && name != "Amelia" {
-				return errors.New("Unexpected name: " + name)
-			}
+	src := Take(FromFile(tempFiles["people"]).SelectColumns(hdr...)).
+		Filter(Any(Like(Row{"name": "Jack"}), Like(Row{"name": "Amelia"})))
 
-			if len(row) != 4 {
-				return fmt.Errorf("Unexpected number of columns: %d", len(row))
-			}
+	err := src(func(row Row) error {
+		if name := row.SafeGetValue("name", ""); name != "Jack" && name != "Amelia" {
+			return errors.New("Unexpected name: " + name)
+		}
 
-			for i, name := range row.Header() {
-				if hdr[i] != name {
-					return errors.New("Unexpected column name: " + name)
-				}
-			}
+		if len(row) != 4 {
+			return fmt.Errorf("Unexpected number of columns: %d", len(row))
+		}
 
-			n++
-			return nil
-		})
+		for i, name := range row.Header() {
+			if hdr[i] != name {
+				return errors.New("Unexpected column name: " + name)
+			}
+		}
+
+		n++
+		return nil
+	})
 
 	if err != nil {
 		t.Error(err)
@@ -150,18 +150,17 @@ func TestSimpleDataSource(t *testing.T) {
 }
 
 func TestFilterMap(t *testing.T) {
-	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("name", "surname", "id")
-
-	err := Take(source).
+	src := Take(FromFile(tempFiles["people"]).SelectColumns("name", "surname", "id")).
 		Filter(Like(Row{"name": "Amelia"})).
-		Map(func(row Row) Row { row["name"] = "Julia"; return row }).
-		ForEach(func(row Row) error {
-			if row["name"] != "Julia" {
-				return fmt.Errorf("Unexpected name: %s instead of Julia", row["name"])
-			}
+		Map(func(row Row) Row { row["name"] = "Julia"; return row })
 
-			return nil
-		})
+	err := src(func(row Row) error {
+		if row["name"] != "Julia" {
+			return fmt.Errorf("Unexpected name: %s instead of Julia", row["name"])
+		}
+
+		return nil
+	})
 
 	if err != nil {
 		t.Error(err)
@@ -175,11 +174,11 @@ func TestWriteFile(t *testing.T) {
 
 	defer os.Remove(tmpFileName)
 
-	src := CsvFileDataSource(tempFiles["people"]).SelectColumns(peopleHeader...)
+	src := Take(FromFile(tempFiles["people"]).SelectColumns(peopleHeader...))
 
 	err := anyFrom(
 		func() (e error) { tmpFileName, e = createTempFile(""); return },
-		func() (e error) { e = Take(src).ToCsvFile(tmpFileName, peopleHeader...); return },
+		func() (e error) { e = src.ToCsvFile(tmpFileName, peopleHeader...); return },
 		func() (e error) { file1, e = ioutil.ReadFile(tmpFileName); return },
 		func() (e error) { file2, e = ioutil.ReadFile(tempFiles["people"]); return },
 	)
@@ -249,7 +248,7 @@ func TestLongChain(t *testing.T) {
 	var err error
 	var products, orders *Index
 
-	orders, err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")).
+	orders, err = Take(FromFile(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "prod_id", "qty", "ts")).
 		IndexOn("cust_id")
 
 	if err != nil {
@@ -257,7 +256,7 @@ func TestLongChain(t *testing.T) {
 		return
 	}
 
-	products, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "product", "price")).
+	products, err = Take(FromFile(tempFiles["stock"]).SelectColumns("prod_id", "product", "price")).
 		UniqueIndexOn("prod_id")
 
 	if err != nil {
@@ -265,21 +264,20 @@ func TestLongChain(t *testing.T) {
 		return
 	}
 
-	people := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname", "born")
+	people := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname", "born"))
 
 	var n int
 
-	err = Take(people).
-		Filter(func(row Row) bool {
-			year, e := row.ValueAsInt("born")
+	err = people.Filter(func(row Row) bool {
+		year, e := row.ValueAsInt("born")
 
-			if e != nil {
-				t.Error(e)
-				return false
-			}
+		if e != nil {
+			t.Error(e)
+			return false
+		}
 
-			return year > 1970
-		}).
+		return year > 1970
+	}).
 		SelectColumns("id", "name", "surname").
 		Join(orders, "id").
 		DropColumns("ts", "order_id", "cust_id").
@@ -294,30 +292,29 @@ func TestLongChain(t *testing.T) {
 		}).
 		Filter(Like(Row{"surname": "Smith"})).
 		Top(10).
-		DropColumns("id").
-		ForEach(func(row Row) error {
-			if n++; n > 10 {
-				return errors.New("Too many rows")
-			}
+		DropColumns("id")(func(row Row) error {
+		if n++; n > 10 {
+			return errors.New("Too many rows")
+		}
 
-			if row["surname"] != "Smith" {
-				return errors.New(`Surname "Smith" not found`)
-			}
+		if row["surname"] != "Smith" {
+			return errors.New(`Surname "Smith" not found`)
+		}
 
-			if row["name"] == "Amelia" {
-				return errors.New(`Name "Amelia" found`)
-			}
+		if row["name"] == "Amelia" {
+			return errors.New(`Name "Amelia" found`)
+		}
 
-			if vals := row.SelectExisting("born", "ts", "order_id", "prod_id", "cust_id"); len(vals) != 0 {
-				return errors.New("Some deleted fields are still there")
-			}
+		if vals := row.SelectExisting("born", "ts", "order_id", "prod_id", "cust_id"); len(vals) != 0 {
+			return errors.New("Some deleted fields are still there")
+		}
 
-			if len(row) != 5 { // name, surname, qty, product, price
-				return fmt.Errorf("Unexpected number of columns: %d instead of 5", len(row))
-			}
+		if len(row) != 5 { // name, surname, qty, product, price
+			return fmt.Errorf("Unexpected number of columns: %d instead of 5", len(row))
+		}
 
-			return nil
-		})
+		return nil
+	})
 
 	if err != nil {
 		t.Error(err)
@@ -327,7 +324,7 @@ func TestLongChain(t *testing.T) {
 	// check the original orders
 	n = 0
 
-	if err = orders.ForEach(func(row Row) error {
+	if err = Take(orders)(func(row Row) error {
 		n++
 
 		if _, e := row.Select("order_id", "cust_id", "prod_id", "qty", "ts"); e != nil {
@@ -348,7 +345,7 @@ func TestLongChain(t *testing.T) {
 	// check the original products
 	n = 0
 
-	if err = products.ForEach(func(row Row) error {
+	if err = Take(products)(func(row Row) error {
 		n++
 
 		if _, e := row.Select("prod_id", "product", "price"); e != nil {
@@ -368,10 +365,10 @@ func TestLongChain(t *testing.T) {
 }
 
 func TestSimpleUniqueJoin(t *testing.T) {
-	people := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
-	orders := CsvFileDataSource(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "qty")
+	people := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname"))
+	orders := Take(FromFile(tempFiles["orders"]).SelectColumns("order_id", "cust_id", "qty"))
 
-	idIndex, err := Take(people).UniqueIndexOn("id")
+	idIndex, err := people.UniqueIndexOn("id")
 
 	if err != nil {
 		t.Errorf("Cannot create index: %s", err)
@@ -380,60 +377,58 @@ func TestSimpleUniqueJoin(t *testing.T) {
 
 	qtyMap := make([]int, len(peopleData))
 
-	err = Take(orders).
-		Join(idIndex, "cust_id").
-		ForEach(func(row Row) (e error) {
-			var id, orderID, custID, qty int
+	err = orders.Join(idIndex, "cust_id")(func(row Row) (e error) {
+		var id, orderID, custID, qty int
 
-			if id, e = row.ValueAsInt("id"); e != nil {
-				return
-			}
-
-			if orderID, e = row.ValueAsInt("order_id"); e != nil {
-				return
-			}
-
-			if custID, e = row.ValueAsInt("cust_id"); e != nil {
-				return
-			}
-
-			if qty, e = row.ValueAsInt("qty"); e != nil {
-				return
-			}
-
-			if id >= len(peopleData) {
-				return fmt.Errorf("Invalid id: %d", id)
-			}
-
-			if peopleData[id].name != row.SafeGetValue("name", "") ||
-				peopleData[id].surname != row.SafeGetValue("surname", "") {
-				return fmt.Errorf("Invalid parameters associated with id %d", id)
-			}
-
-			if id != custID {
-				return fmt.Errorf("id = %d, cust_id = %d", id, custID)
-			}
-
-			if orderID >= numOrders {
-				return fmt.Errorf("Invalid order_id: %d", orderID)
-			}
-
-			if ordersData[orderID].custID != custID {
-				return fmt.Errorf("cust_id: got %d instead of %d", custID, ordersData[orderID].custID)
-			}
-
-			if ordersData[orderID].qty != qty {
-				return fmt.Errorf("qty: got %d instead of %d", qty, ordersData[orderID].qty)
-			}
-
-			if len(row) != 6 {
-				return fmt.Errorf("Invalid number of columns: %d", len(row))
-			}
-
-			qtyMap[id] += qty
-
+		if id, e = row.ValueAsInt("id"); e != nil {
 			return
-		})
+		}
+
+		if orderID, e = row.ValueAsInt("order_id"); e != nil {
+			return
+		}
+
+		if custID, e = row.ValueAsInt("cust_id"); e != nil {
+			return
+		}
+
+		if qty, e = row.ValueAsInt("qty"); e != nil {
+			return
+		}
+
+		if id >= len(peopleData) {
+			return fmt.Errorf("Invalid id: %d", id)
+		}
+
+		if peopleData[id].name != row.SafeGetValue("name", "") ||
+			peopleData[id].surname != row.SafeGetValue("surname", "") {
+			return fmt.Errorf("Invalid parameters associated with id %d", id)
+		}
+
+		if id != custID {
+			return fmt.Errorf("id = %d, cust_id = %d", id, custID)
+		}
+
+		if orderID >= numOrders {
+			return fmt.Errorf("Invalid order_id: %d", orderID)
+		}
+
+		if ordersData[orderID].custID != custID {
+			return fmt.Errorf("cust_id: got %d instead of %d", custID, ordersData[orderID].custID)
+		}
+
+		if ordersData[orderID].qty != qty {
+			return fmt.Errorf("qty: got %d instead of %d", qty, ordersData[orderID].qty)
+		}
+
+		if len(row) != 6 {
+			return fmt.Errorf("Invalid number of columns: %d", len(row))
+		}
+
+		qtyMap[id] += qty
+
+		return
+	})
 
 	if err != nil {
 		t.Errorf("Join failed: %s", err)
@@ -456,20 +451,20 @@ func TestSimpleUniqueJoin(t *testing.T) {
 }
 
 func TestSorted(t *testing.T) {
-	people := CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+	people := Take(FromFile(tempFiles["people"]).ExpectHeader(map[string]int{
 		"name":    1,
 		"surname": 2,
-	})
+	}))
 
 	// by name, surname
-	index, err := Take(people).UniqueIndexOn("name", "surname")
+	index, err := people.UniqueIndexOn("name", "surname")
 
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	if err = Take(index).Top(len(peopleSurnames)).ForEach(func(row Row) error {
+	if err = Take(index).Top(uint64(len(peopleSurnames)))(func(row Row) error {
 		if name := row.SafeGetValue("name", "???"); name != "Amelia" {
 			return errors.New("Unexpected name: " + name)
 		}
@@ -481,7 +476,9 @@ func TestSorted(t *testing.T) {
 	}
 
 	// second name, DropWhile()
-	if err = Take(index).DropWhile(Like(Row{"name": "Amelia"})).Top(len(peopleSurnames)).ForEach(func(row Row) error {
+	if err = Take(index).
+		DropWhile(Like(Row{"name": "Amelia"})).
+		Top(uint64(len(peopleSurnames)))(func(row Row) error {
 		if name := row.SafeGetValue("name", "???"); name != "Ava" {
 			return errors.New("Unexpected name: " + name)
 		}
@@ -493,7 +490,7 @@ func TestSorted(t *testing.T) {
 	}
 
 	// by surname, name
-	index, err = Take(people).UniqueIndexOn("surname", "name")
+	index, err = people.UniqueIndexOn("surname", "name")
 
 	if err != nil {
 		t.Error(err)
@@ -501,7 +498,9 @@ func TestSorted(t *testing.T) {
 	}
 
 	// take second surname
-	if err = Take(index).Drop(len(peopleNames)).Top(len(peopleNames)).ForEach(func(row Row) error {
+	if err = Take(index).
+		Drop(uint64(len(peopleNames))).
+		Top(uint64(len(peopleNames)))(func(row Row) error {
 		if surname := row.SafeGetValue("surname", "???"); surname != "Davies" {
 			return errors.New("Unexpected surname: " + surname)
 		}
@@ -514,10 +513,10 @@ func TestSorted(t *testing.T) {
 }
 
 func TestSimpleTotals(t *testing.T) {
-	orders := CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")
-	products := CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")
+	orders := Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty"))
+	products := Take(FromFile(tempFiles["stock"]).SelectColumns("prod_id", "price"))
 
-	prodIndex, err := Take(products).UniqueIndexOn("prod_id")
+	prodIndex, err := products.UniqueIndexOn("prod_id")
 
 	if err != nil {
 		t.Error(err)
@@ -526,7 +525,7 @@ func TestSimpleTotals(t *testing.T) {
 
 	totals := make([]float64, len(peopleData))
 
-	if err = Take(orders).Join(prodIndex).ForEach(func(row Row) error {
+	if err = orders.Join(prodIndex)(func(row Row) error {
 		var id, qty int
 		var e error
 
@@ -571,8 +570,8 @@ func TestSimpleTotals(t *testing.T) {
 }
 
 func TestMultiIndex(t *testing.T) {
-	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
-	index, err := Take(source).UniqueIndexOn("name", "surname")
+	source := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname"))
+	index, err := source.UniqueIndexOn("name", "surname")
 
 	if err != nil {
 		t.Error(err)
@@ -580,13 +579,13 @@ func TestMultiIndex(t *testing.T) {
 	}
 
 	// non-existing name
-	if err = index.Find("xxx").ForEach(neverCalled); err != nil {
+	if err = index.Find("xxx")(neverCalled); err != nil {
 		t.Error(err)
 		return
 	}
 
 	// test sub-index
-	if err = index.Find("Amelia").ForEach(func(row Row) (e error) {
+	if err = index.Find("Amelia")(func(row Row) (e error) {
 		if name := row.SafeGetValue("name", "???"); name != "Amelia" {
 			e = fmt.Errorf("name: %s instead of Amelia", name)
 		}
@@ -600,9 +599,9 @@ func TestMultiIndex(t *testing.T) {
 	// self-join on existing names
 	for _, name := range peopleNames {
 		surnames := map[string]int{}
-		s := Take(source).Join(index.SubIndex(name))
+		s := source.Join(index.SubIndex(name))
 
-		if err = s.ForEach(func(row Row) error {
+		if err = s(func(row Row) error {
 			surnames[row.SafeGetValue("surname", "???")]++
 			return nil
 		}); err != nil {
@@ -627,7 +626,7 @@ func TestMultiIndex(t *testing.T) {
 	for _, person := range peopleData {
 		var count int
 
-		if err = index.Find(person.name, person.surname).ForEach(func(Row) error {
+		if err = index.Find(person.name, person.surname)(func(Row) error {
 			count++
 			return nil
 		}); err != nil {
@@ -642,7 +641,7 @@ func TestMultiIndex(t *testing.T) {
 	}
 
 	// try non-existent name and surname
-	if err = index.Find("Jack", "xxx").ForEach(neverCalled); err != nil {
+	if err = index.Find("Jack", "xxx")(neverCalled); err != nil {
 		t.Error(err)
 		return
 	}
@@ -651,7 +650,7 @@ func TestMultiIndex(t *testing.T) {
 func TestExcept(t *testing.T) {
 	const name = "Emily"
 
-	people, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).
+	people, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).
 		Filter(Like(Row{"name": name})).
 		IndexOn("id")
 
@@ -662,16 +661,15 @@ func TestExcept(t *testing.T) {
 
 	n := 0
 
-	err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
-		Except(people, "cust_id").
-		ForEach(func(row Row) error {
-			if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].name == name {
-				return fmt.Errorf("Cust. id %d somehow got through", id)
-			}
+	err = Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+		Except(people, "cust_id")(func(row Row) error {
+		if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].name == name {
+			return fmt.Errorf("Cust. id %d somehow got through", id)
+		}
 
-			n++
-			return nil
-		})
+		n++
+		return nil
+	})
 
 	if err != nil {
 		t.Error(err)
@@ -694,7 +692,7 @@ func TestExcept(t *testing.T) {
 }
 
 func TestResolver(t *testing.T) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
+	source, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		t.Error(err)
@@ -764,7 +762,7 @@ func TestTransformedSource(t *testing.T) {
 	// aggregate by cust_id
 	custAmounts := make([]float64, len(peopleData))
 
-	if err = amounts.ForEach(func(row Row) (e error) {
+	if err = amounts(func(row Row) (e error) {
 		var values []string
 
 		if values, e = row.SelectValues("cust_id", "prod_id", "amount"); e != nil {
@@ -808,7 +806,7 @@ func TestTransformedSource(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	// invalid column name
-	err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "xxx")).ForEach(neverCalled)
+	err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "xxx"))(neverCalled)
 
 	if err == nil || !strings.HasSuffix(err.Error(), "row 0: Column not found: xxx") {
 		t.Error("Unexpected error:", err)
@@ -817,16 +815,16 @@ func TestErrors(t *testing.T) {
 
 	// duplicate column name
 	if err = shouldPanic(func() {
-		CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "id")
+		Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "id"))
 	}); err != nil {
 		t.Error(err)
 		return
 	}
 
 	// missing column on index
-	source := CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")
+	source := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname"))
 
-	_, err = Take(source).IndexOn("name", "xxx")
+	_, err = source.IndexOn("name", "xxx")
 
 	if err == nil || !strings.HasSuffix(err.Error(), `Missing column "xxx" while creating an index`) {
 		t.Error("Unexpected error:", err)
@@ -834,7 +832,7 @@ func TestErrors(t *testing.T) {
 	}
 
 	// unique index with duplicate keys
-	_, err = Take(source).UniqueIndexOn("name")
+	_, err = source.UniqueIndexOn("name")
 
 	if err == nil || !strings.Contains(err.Error(), "Duplicate value while creating unique index:") {
 		t.Error(err)
@@ -843,7 +841,7 @@ func TestErrors(t *testing.T) {
 
 	var index *Index
 
-	if index, err = Take(source).IndexOn("name"); err != nil {
+	if index, err = source.IndexOn("name"); err != nil {
 		t.Error(err)
 		return
 	}
@@ -865,13 +863,13 @@ func TestErrors(t *testing.T) {
 
 	// panics on index
 	if err = shouldPanic(func() {
-		Take(source).IndexOn() // empty list of columns
+		source.IndexOn() // empty list of columns
 	}); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if index, err = Take(source).IndexOn("id"); err != nil {
+	if index, err = source.IndexOn("id"); err != nil {
 		t.Error(err)
 		return
 	}
@@ -884,24 +882,24 @@ func TestErrors(t *testing.T) {
 	}
 
 	// invalid header
-	people := CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+	people := Take(FromFile(tempFiles["people"]).ExpectHeader(map[string]int{
 		"name":    1,
 		"surname": 3, // wrong column
-	})
+	}))
 
-	err = people.ForEach(neverCalled)
+	err = people(neverCalled)
 
 	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
 		return
 	}
 
-	people = CsvFileDataSource(tempFiles["people"]).ExpectHeader(map[string]int{
+	people = Take(FromFile(tempFiles["people"]).ExpectHeader(map[string]int{
 		"name":    1,
 		"surname": 25, // non-existent column
-	})
+	}))
 
-	err = people.ForEach(neverCalled)
+	err = people(neverCalled)
 
 	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
@@ -962,7 +960,7 @@ func TestIndexStore(t *testing.T) {
 	const namePrefix = "index"
 
 	// read data and build index
-	index, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).IndexOn("id")
+	index, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).IndexOn("id")
 
 	if err != nil {
 		t.Error(err)
@@ -1016,7 +1014,7 @@ func TestIndexStore(t *testing.T) {
 
 // benchmarks -------------------------------------------------------------------------------------
 func BenchmarkCreateSmallSingleIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
+	source, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -1042,7 +1040,7 @@ func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 }
 
 func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
+	source, err := Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -1068,7 +1066,7 @@ func BenchmarkCreateBiggerMultiIndex(b *testing.B) {
 }
 
 func BenchmarkSearchSmallSingleIndex(b *testing.B) {
-	index, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
+	index, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
 
 	if err != nil {
 		b.Error(err)
@@ -1083,7 +1081,7 @@ func BenchmarkSearchSmallSingleIndex(b *testing.B) {
 }
 
 func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
-	index, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
+	index, err := Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
 
 	if err != nil {
 		b.Error(err)
@@ -1098,7 +1096,7 @@ func BenchmarkSearchBiggerMultiIndex(b *testing.B) {
 }
 
 func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
+	source, err := Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -1107,7 +1105,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 
 	var index *Index
 
-	index, err = Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
+	index, err = Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).UniqueIndexOn("id")
 
 	if err != nil {
 		b.Error(err)
@@ -1117,7 +1115,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := TakeRows(source).Join(index, "cust_id").ForEach(nop); err != nil {
+		if err := TakeRows(source).Join(index, "cust_id")(nop); err != nil {
 			b.Error(err)
 			return
 		}
@@ -1125,7 +1123,7 @@ func BenchmarkJoinOnSmallSingleIndex(b *testing.B) {
 }
 
 func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
-	source, err := Take(CsvFileDataSource(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
+	source, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
 
 	if err != nil {
 		b.Error(err)
@@ -1134,7 +1132,7 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 
 	var index *Index
 
-	index, err = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
+	index, err = Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).IndexOn("cust_id", "prod_id")
 
 	if err != nil {
 		b.Error(err)
@@ -1144,7 +1142,7 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := TakeRows(source).Join(index, "id").ForEach(nop); err != nil {
+		if err := TakeRows(source).Join(index, "id")(nop); err != nil {
 			b.Error(err)
 			return
 		}
@@ -1349,13 +1347,13 @@ func createTempFile(prefix string) (name string, err error) {
 }
 
 // cust_id, prod_id, amount
-func createAmountsTable() (amounts Table, err error) {
+func createAmountsTable() (amounts DataSource, err error) {
 	var prodIndex *Index
 
-	prodIndex, err = Take(CsvFileDataSource(tempFiles["stock"]).SelectColumns("prod_id", "price")).UniqueIndexOn("prod_id")
+	prodIndex, err = Take(FromFile(tempFiles["stock"]).SelectColumns("prod_id", "price")).UniqueIndexOn("prod_id")
 
 	if err == nil {
-		amounts = Take(CsvFileDataSource(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
+		amounts = Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
 			Join(prodIndex).
 			Transform(func(row Row) (Row, error) {
 				var qty int
