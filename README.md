@@ -86,7 +86,7 @@ the `DataSource` function to produce a specific type of output:
 - `ToRows` to convert the `DataSource` to a slice of `Row`s.
 
 #### Type `Index`
-Index is a sorted collection of rows. The sorting is performed on the columns specified when the index
+`Index` is a sorted collection of rows. The sorting is performed on the columns specified when the index
 is created. Iteration over an index yields a sorted sequence of rows. An `Index` can be joined with
 a `DataSource`. The type has operations for finding rows and creating sub-indices in O(log(n)) time.
 Another useful operation is resolving duplicates. Building an index takes O(n*log(n)) time. It should
