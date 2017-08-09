@@ -44,7 +44,7 @@ import (
 )
 
 /*
-Row represents one line from a data source like .csv file.
+Row represents one line from a data source like a .csv file.
 
 Each Row is a map from column names to the string values under that columns on the current line.
 It is assumed that each column has a unique name.
@@ -265,8 +265,8 @@ func Take(src interface {
 	return src.Iterate
 }
 
-// Transform is the most generic operation on a Row. It takes a function which
-// maps a Row to another Row or an error. Any error returned from that function
+// Transform is the most generic operation on a Row. It takes a function that
+// maps a Row to another Row and an error. Any error returned from that function
 // stops the iteration, otherwise the returned Row, if not empty, gets passed
 // down to the next stage of the processing pipeline.
 func (src DataSource) Transform(trans func(Row) (Row, error)) DataSource {
@@ -352,7 +352,7 @@ func (src DataSource) Drop(n uint64) DataSource {
 }
 
 // TakeWhile takes a predicate which gets applied to each Row upon iteration.
-// The iteration stops when the predicate returns 'false' for the first time.
+// The iteration stops when the predicate returns 'false'.
 func (src DataSource) TakeWhile(pred func(Row) bool) DataSource {
 	return func(fn RowFunc) error {
 		var done bool
@@ -415,7 +415,7 @@ func (src DataSource) ToCsv(out io.Writer, columns ...string) (err error) {
 	return
 }
 
-// ToCsv iterates the data source and writes the selected columns in .csv format to the given file.
+// ToCsvFile iterates the data source and writes the selected columns in .csv format to the given file.
 // The data are written in the "canonical" form with the header on the first line and with all the lines
 // having the same number of fields, using default settings for the underlying csv.Writer.
 func (src DataSource) ToCsvFile(name string, columns ...string) (err error) {
@@ -639,7 +639,7 @@ func (index *Index) WriteTo(fileName string) (err error) {
 	return
 }
 
-// LoadIndex reads index from the specified file.
+// LoadIndex reads the index from the specified file.
 func LoadIndex(fileName string) (*Index, error) {
 	var file *os.File
 	var err error
@@ -879,8 +879,7 @@ func (index *indexImpl) cmp(i int, values []string, eq bool) bool {
 	return eq
 }
 
-// File is an implementation of the DataSource interface that reads its
-// data from a .csv file.
+// File is a builder of a DataSource that reads its data from a .csv file.
 type File struct {
 	name                         string
 	delimiter, comment           rune
@@ -946,7 +945,7 @@ func (s *File) AssumeHeader(spec map[string]int) *File {
 // ExpectHeader sets the header for input files that have their column
 // names specified on the first line of the file. The line gets verified
 // against this specification each time the input file is opened.
-// The header specification is a map from expected column names to their corresponding
+// The header specification is a map from the expected column names to their corresponding
 // column indices. A negative value for an index means that the real value of the index
 // will be found searching the first line of the file for the specified column name.
 func (s *File) ExpectHeader(spec map[string]int) *File {
@@ -967,7 +966,7 @@ func (s *File) ExpectHeader(spec map[string]int) *File {
 // SelectColumns specifies the names of the columns to read from the file.
 // The header specification is built by searching the first line of the input file
 // for the names specified and recording the indices of those columns. It is an error
-// if any of the column names is not found.
+// if any column name is not found.
 func (s *File) SelectColumns(names ...string) *File {
 	if len(names) == 0 {
 		panic("Empty header spec")
@@ -988,7 +987,7 @@ func (s *File) SelectColumns(names ...string) *File {
 }
 
 // NumFields sets the expected number of fields on each line of the input file.
-// It is an error if any line from the input file does not have that exact number of fields.
+// It is an error if any line from the input file does not have this exact number of fields.
 func (s *File) NumFields(n int) *File {
 	s.numFields = n
 	return s
@@ -1008,7 +1007,7 @@ func (s *File) NumFieldsAny() *File {
 }
 
 // Iterate reads the input file line by line, converts each line to a Row and calls
-// the supplied RowFunc. ForEach is goroutine-safe and may be called multiple times.
+// the supplied RowFunc.
 func (s *File) Iterate(fn RowFunc) error {
 	var lineNo uint64
 
@@ -1140,7 +1139,7 @@ func (s *File) mapError(err error, lineNo uint64) error {
 	}
 }
 
-// DataSourceError is the type of the error returned from File.ForEach method.
+// DataSourceError is the type of the error returned from File.Iterate method.
 type DataSourceError struct {
 	Name string
 	Line uint64
