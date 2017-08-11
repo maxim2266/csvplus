@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2016, Maxim Konakov
+Copyright (c) 2016,2017, Maxim Konakov
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
