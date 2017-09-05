@@ -728,14 +728,14 @@ func equalRows(columns []string, r1, r2 Row) bool {
 
 // check if all the column names from the specified list are unique
 func allColumnsUnique(columns []string) bool {
-	set := make(map[string]int, len(columns))
+	set := make(map[string]struct{}, len(columns))
 
 	for _, col := range columns {
 		if _, found := set[col]; found {
 			return false
 		}
 
-		set[col] = 0
+		set[col] = struct{}{}
 	}
 
 	return true
