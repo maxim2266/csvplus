@@ -893,8 +893,9 @@ type File struct {
 // csv.Reader settings.
 func FromFile(name string) *File {
 	return &File{
-		name:      name,
-		delimiter: ',',
+		name:           name,
+		delimiter:      ',',
+		headerFromFile: true,
 	}
 }
 
@@ -1029,7 +1030,7 @@ func (s *File) Iterate(fn RowFunc) error {
 	reader.FieldsPerRecord = s.numFields
 
 	// header
-	header := s.header
+	var header map[string]int
 
 	if s.headerFromFile {
 		if header, err = s.makeHeader(reader); err != nil {
@@ -1037,6 +1038,8 @@ func (s *File) Iterate(fn RowFunc) error {
 		}
 
 		lineNo++
+	} else {
+		header = s.header
 	}
 
 	// iteration
@@ -1079,6 +1082,21 @@ func (s *File) makeHeader(reader *csv.Reader) (map[string]int, error) {
 		return nil, err
 	}
 
+	if len(line) == 0 {
+		return nil, errors.New("Empty header")
+	}
+
+	if len(s.header) == 0 { // the header is not specified - get it from the first line
+		header := make(map[string]int, len(line))
+
+		for i, name := range line {
+			header[name] = i
+		}
+
+		return header, nil
+	}
+
+	// check and update the specified header
 	header := make(map[string]int, len(s.header))
 
 	// fix column indices
