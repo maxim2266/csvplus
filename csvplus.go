@@ -1056,7 +1056,8 @@ func (r *Reader) Iterate(fn RowFunc) error {
 
 	// header
 	var header map[string]int
-	var lineNo uint64
+
+	lineNo := uint64(1)
 
 	if r.headerFromFirstRow {
 		if header, err = r.makeHeader(reader); err != nil {
@@ -1184,7 +1185,7 @@ func mapError(err error, lineNo uint64) error {
 
 // DataSourceError is the type of the error returned from Reader.Iterate method.
 type DataSourceError struct {
-	Line uint64
+	Line uint64 // counting from 1
 	Err  error
 }
 
