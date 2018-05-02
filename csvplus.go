@@ -425,6 +425,12 @@ func (src DataSource) ToCsvFile(name string, columns ...string) (err error) {
 	}
 
 	defer func() {
+		if p := recover(); p != nil {
+			file.Close()
+			os.Remove(name)
+			panic(p)
+		}
+
 		if e := file.Close(); e != nil && err == nil {
 			err = e
 		}
