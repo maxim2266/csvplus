@@ -808,7 +808,7 @@ func TestErrors(t *testing.T) {
 	// invalid column name
 	err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "xxx"))(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), "row 0: Column not found: xxx") {
+	if err == nil || !strings.HasSuffix(err.Error(), "Row 0: Column not found: xxx") {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -889,7 +889,7 @@ func TestErrors(t *testing.T) {
 
 	err = people(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
+	if err == nil || !strings.HasSuffix(err.Error(), `Row 0: Misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -901,7 +901,7 @@ func TestErrors(t *testing.T) {
 
 	err = people(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), `row 0: Misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
+	if err == nil || !strings.HasSuffix(err.Error(), `Row 0: Misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
 		return
 	}

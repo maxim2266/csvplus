@@ -98,4 +98,4 @@ stored to, or loaded from a disk file.
 For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
 
 ### Project status
-The project is in a usable state usually called "beta". Tested on Linux Mint 18.2 using Go version 1.8.3.
+The project is in a usable state usually called "beta". Tested on Linux Mint 18.3 using Go version 1.10.2.
