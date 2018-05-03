@@ -31,7 +31,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package csvplus
 
 import (
-	"bytes"
 	"encoding/csv"
 	"encoding/gob"
 	"errors"
@@ -92,7 +91,7 @@ func (row Row) String() string {
 
 	header := row.Header() // make order predictable
 
-	var buff bytes.Buffer
+	var buff strings.Builder
 
 	buff.WriteString(`{ "`)
 	buff.WriteString(header[0])
