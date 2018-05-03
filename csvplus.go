@@ -40,6 +40,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 /*
@@ -90,25 +91,14 @@ func (row Row) String() string {
 	}
 
 	header := row.Header() // make order predictable
-
-	var buff strings.Builder
-
-	buff.WriteString(`{ "`)
-	buff.WriteString(header[0])
-	buff.WriteString(`" : "`)
-	buff.WriteString(row[header[0]])
-	buff.WriteByte('"')
+	buff := append(append(append(append([]byte(`{ "`), header[0]...), `" : "`...), row[header[0]]...), '"')
 
 	for _, col := range header[1:] {
-		buff.WriteString(`, "`)
-		buff.WriteString(col)
-		buff.WriteString(`" : "`)
-		buff.WriteString(row[col])
-		buff.WriteByte('"')
+		buff = append(append(append(append(append(buff, `, "`...), col...), `" : "`...), row[col]...), '"')
 	}
 
-	buff.WriteString(" }")
-	return buff.String()
+	buff = append(buff, " }"...)
+	return *(*string)(unsafe.Pointer(&buff))
 }
 
 // SelectExisting takes a list of column names and returns a new Row
