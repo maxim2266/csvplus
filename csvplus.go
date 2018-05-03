@@ -124,7 +124,7 @@ func (row Row) Select(cols ...string) (Row, error) {
 		var found bool
 
 		if r[name], found = row[name]; !found {
-			return nil, fmt.Errorf(`Missing column "%s"`, name)
+			return nil, fmt.Errorf(`Missing column %q`, name)
 		}
 	}
 
@@ -140,7 +140,7 @@ func (row Row) SelectValues(cols ...string) ([]string, error) {
 		var found bool
 
 		if r[i], found = row[name]; !found {
-			return nil, fmt.Errorf(`Missing column "%s"`, name)
+			return nil, fmt.Errorf(`Missing column %q`, name)
 		}
 	}
 
@@ -165,15 +165,15 @@ func (row Row) ValueAsInt(column string) (res int, err error) {
 	var found bool
 
 	if val, found = row[column]; !found {
-		err = fmt.Errorf(`Missing column "%s"`, column)
+		err = fmt.Errorf(`Missing column %q`, column)
 		return
 	}
 
 	if res, err = strconv.Atoi(val); err != nil {
 		if e, ok := err.(*strconv.NumError); ok {
-			err = fmt.Errorf(`Column "%s": Cannot convert "%s" to integer: %s`, column, val, e.Err)
+			err = fmt.Errorf(`Column %q: Cannot convert %q to integer: %s`, column, val, e.Err)
 		} else {
-			err = fmt.Errorf(`Column "%s": %s`, column, err.Error())
+			err = fmt.Errorf(`Column %q: %s`, column, err)
 		}
 	}
 
@@ -187,15 +187,15 @@ func (row Row) ValueAsFloat64(column string) (res float64, err error) {
 	var found bool
 
 	if val, found = row[column]; !found {
-		err = fmt.Errorf(`Missing column "%s"`, column)
+		err = fmt.Errorf(`Missing column %q`, column)
 		return
 	}
 
 	if res, err = strconv.ParseFloat(val, 64); err != nil {
 		if e, ok := err.(*strconv.NumError); ok {
-			err = fmt.Errorf(`Column "%s": Cannot convert "%s" to float: %s`, column, val, e.Err)
+			err = fmt.Errorf(`Column %q: Cannot convert %q to float: %s`, column, val, e.Err)
 		} else {
-			err = fmt.Errorf(`Column "%s": %s`, column, err.Error())
+			err = fmt.Errorf(`Column %q: %s`, column, err.Error())
 		}
 	}
 
@@ -676,7 +676,7 @@ func createIndex(src DataSource, columns []string) (*Index, error) {
 	if err := src(func(row Row) error {
 		for _, col := range columns {
 			if !row.HasColumn(col) {
-				return fmt.Errorf(`Missing column "%s" while creating an index`, col)
+				return fmt.Errorf(`Missing column %q while creating an index`, col)
 			}
 		}
 
@@ -1129,7 +1129,7 @@ func (r *Reader) makeHeader(reader *csv.Reader) (map[string]int, error) {
 			if index == -1 || index == i {
 				header[name] = i
 			} else {
-				return nil, fmt.Errorf(`Misplaced column "%s": expected at pos. %d, but found at pos. %d`, name, index, i)
+				return nil, fmt.Errorf(`Misplaced column %q: expected at pos. %d, but found at pos. %d`, name, index, i)
 			}
 		}
 	}
