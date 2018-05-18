@@ -409,13 +409,13 @@ func (src DataSource) ToCsv(out io.Writer, columns ...string) (err error) {
 // The data are written in the "canonical" form with the header on the first line and with all the lines
 // having the same number of fields, using default settings for the underlying csv.Writer.
 func (src DataSource) ToCsvFile(name string, columns ...string) error {
-	return withFile(name, func(file io.Writer) error {
+	return writeFile(name, func(file io.Writer) error {
 		return src.ToCsv(file, columns...)
 	})
 }
 
 // call the given function with the file stream open for writing
-func withFile(name string, fn func(io.Writer) error) (err error) {
+func writeFile(name string, fn func(io.Writer) error) (err error) {
 	var file *os.File
 
 	if file, err = os.Create(name); err != nil {
@@ -475,8 +475,8 @@ func (src DataSource) ToJSON(out io.Writer) (err error) {
 }
 
 // ToJSONFile iterates over the data source and writes all Rows to the given file in JSON format.
-func (src DataSource) ToJSONFile(name string) (err error) {
-	return withFile(name, src.ToJSON)
+func (src DataSource) ToJSONFile(name string) error {
+	return writeFile(name, src.ToJSON)
 }
 
 // ToRows iterates the DataSource storing the result in a slice of Rows.
