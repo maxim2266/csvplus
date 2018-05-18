@@ -1,4 +1,4 @@
-SRC = csvplus.go  csvplus_test.go
+SRC = csvplus.go csvplus_test.go
 
 .PHONY : build test check
 

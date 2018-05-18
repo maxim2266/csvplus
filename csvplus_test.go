@@ -31,9 +31,11 @@ package csvplus
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -400,8 +402,8 @@ func TestSimpleUniqueJoin(t *testing.T) {
 			return fmt.Errorf("Invalid id: %d", id)
 		}
 
-		if peopleData[id].name != row.SafeGetValue("name", "") ||
-			peopleData[id].surname != row.SafeGetValue("surname", "") {
+		if peopleData[id].Name != row.SafeGetValue("name", "") ||
+			peopleData[id].Surname != row.SafeGetValue("surname", "") {
 			return fmt.Errorf("Invalid parameters associated with id %d", id)
 		}
 
@@ -626,7 +628,7 @@ func TestMultiIndex(t *testing.T) {
 	for _, person := range peopleData {
 		var count int
 
-		if err = index.Find(person.name, person.surname)(func(Row) error {
+		if err = index.Find(person.Name, person.Surname)(func(Row) error {
 			count++
 			return nil
 		}); err != nil {
@@ -635,7 +637,7 @@ func TestMultiIndex(t *testing.T) {
 		}
 
 		if count != 1 {
-			t.Errorf("%s %s found %d times", person.name, person.surname, count)
+			t.Errorf("%s %s found %d times", person.Name, person.Surname, count)
 			return
 		}
 	}
@@ -663,7 +665,7 @@ func TestExcept(t *testing.T) {
 
 	err = Take(FromFile(tempFiles["orders"]).SelectColumns("cust_id", "prod_id", "qty")).
 		Except(people, "cust_id")(func(row Row) error {
-		if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].name == name {
+		if id, _ := strconv.Atoi(row["cust_id"]); peopleData[id].Name == name {
 			return fmt.Errorf("Cust. id %d somehow got through", id)
 		}
 
@@ -680,7 +682,7 @@ func TestExcept(t *testing.T) {
 	m := 0
 
 	for _, order := range ordersData {
-		if peopleData[order.custID].name != name {
+		if peopleData[order.custID].Name != name {
 			m++
 		}
 	}
@@ -798,7 +800,7 @@ func TestTransformedSource(t *testing.T) {
 	for i, amount := range origCustAmounts {
 		if math.Abs((custAmounts[i]-amount)/amount) > 1e-6 {
 			t.Errorf("Amount mismatch for %s %s (%d): %f instead of %f",
-				peopleData[i].name, peopleData[i].surname, i, custAmounts[i], amount)
+				peopleData[i].Name, peopleData[i].Surname, i, custAmounts[i], amount)
 			return
 		}
 	}
@@ -1012,6 +1014,41 @@ func TestIndexStore(t *testing.T) {
 	}
 }
 
+func TestJSONStruct(t *testing.T) {
+	var buff bytes.Buffer
+
+	// read input .csv and convert to JSON
+	err := Take(FromFile(tempFiles["people"]).SelectColumns("name", "surname", "born")).ToJSON(&buff)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// de-serialise back from JSON to struct slice
+	data, err := peopleFromJSON(&buff)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// validate
+	if len(data) != len(peopleData) {
+		t.Errorf("Invalid number of records: %d instead of %d", len(data), len(peopleData))
+		return
+	}
+
+	for i := 0; i < len(data); i++ {
+		if data[i].Name != peopleData[i].Name ||
+			data[i].Surname != peopleData[i].Surname ||
+			data[i].Born != peopleData[i].Born {
+			t.Errorf("Data mismatch: %v instead of %v", data[i], peopleData[i])
+			return
+		}
+	}
+}
+
 // benchmarks -------------------------------------------------------------------------------------
 func BenchmarkCreateSmallSingleIndex(b *testing.B) {
 	source, err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "surname")).ToRows()
@@ -1151,8 +1188,8 @@ func BenchmarkJoinOnBiggerMultiIndex(b *testing.B) {
 
 // generated test data ----------------------------------------------------------------------------
 type personData struct {
-	name, surname string
-	year          int
+	Name, Surname string
+	Born          int `json:",string"`
 }
 
 var peopleData = make([]personData, len(peopleNames)*len(peopleSurnames))
@@ -1194,18 +1231,18 @@ func makePersonsCsvFile() error {
 				id := i*len(peopleSurnames) + j
 
 				peopleData[id] = personData{
-					name:    name,
-					surname: surname,
-					year:    1916 + rand.Intn(90), // at least 10 years old
+					Name:    name,
+					Surname: surname,
+					Born:    1916 + rand.Intn(90), // at least 10 years old
 				}
 
 				person := &peopleData[id]
 
 				if err := out.Write([]string{
 					strconv.Itoa(id),
-					person.name,
-					person.surname,
-					strconv.Itoa(person.year),
+					person.Name,
+					person.Surname,
+					strconv.Itoa(person.Born),
 				}); err != nil {
 					return err
 				}
@@ -1214,6 +1251,11 @@ func makePersonsCsvFile() error {
 
 		return nil
 	})
+}
+
+func peopleFromJSON(in io.Reader) (pd []personData, err error) {
+	err = json.NewDecoder(in).Decode(&pd)
+	return
 }
 
 // stock.csv ------------------------------------------------------------------------------------

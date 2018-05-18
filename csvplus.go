@@ -31,8 +31,10 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package csvplus
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -430,6 +432,66 @@ func (src DataSource) ToCsvFile(name string, columns ...string) (err error) {
 	}()
 
 	err = src.ToCsv(file, columns...)
+	return
+}
+
+// ToJSON iterates over the data source and writes all Rows to the given io.Writer in JSON format.
+func (src DataSource) ToJSON(out io.Writer) (err error) {
+	var buff bytes.Buffer
+
+	buff.WriteByte('[')
+
+	count := uint64(0)
+	enc := json.NewEncoder(&buff)
+
+	enc.SetIndent("", "")
+	enc.SetEscapeHTML(false)
+
+	err = src(func(row Row) (e error) {
+		if count++; count != 1 {
+			buff.WriteByte(',')
+		}
+
+		if e = enc.Encode(row); e == nil && buff.Len() > 10000 {
+			_, e = buff.WriteTo(out)
+		}
+
+		return
+	})
+
+	if err == nil {
+		buff.WriteByte(']')
+		_, err = buff.WriteTo(out)
+	}
+
+	return
+}
+
+// ToJSONFile iterates over the data source and writes all Rows to the given file in JSON format.
+func (src DataSource) ToJSONFile(name string) (err error) {
+	var file *os.File
+
+	if file, err = os.Create(name); err != nil {
+		return
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			file.Close()
+			os.Remove(name)
+			panic(p)
+		}
+
+		if e := file.Close(); e != nil && err == nil {
+			err = e
+		}
+
+		if err != nil {
+			os.Remove(name)
+		}
+	}()
+
+	err = src.ToJSON(file)
 	return
 }
 
