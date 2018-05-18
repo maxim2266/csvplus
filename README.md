@@ -84,6 +84,8 @@ the `DataSource` function to produce a specific type of output:
 - `UniqueIndexOn` to build a unique index on the specified column(s);
 - `ToCsv` to serialise the `DataSource` to the given `io.Writer` in `.csv` format;
 - `ToCsvFile` to store the `DataSource` in the specified file in `.csv` format;
+- `ToJSON` to serialise the `DataSource` to the given `io.Writer` in JSON format;
+- `ToJSONFile` to store the `DataSource` in the specified file in JSON format;
 - `ToRows` to convert the `DataSource` to a slice of `Row`s.
 
 #### Type `Index`
