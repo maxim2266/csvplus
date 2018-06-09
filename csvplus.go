@@ -930,7 +930,7 @@ type Reader struct {
 	headerFromFirstRow           bool
 }
 
-type maker = func() (io.Reader, func(), error)
+type maker func() (io.Reader, func(), error)
 
 // FromReader constructs a new csv reader from the given io.Reader, with default settings.
 func FromReader(input io.Reader) *Reader {
