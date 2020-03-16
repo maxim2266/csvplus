@@ -1,6 +1,6 @@
 # csvplus
 
-[![GoDoc](https://godoc.org/github.com/maxim2266/csvplus?status.svg)](https://godoc.org/github.com/maxim2266/csvplus)
+[![GoDoc](https://godoc.org/github.com/maxim2266/csvplus?status.svg)](https://pkg.go.dev/github.com/maxim2266/csvplus)
 [![Go report](http://goreportcard.com/badge/maxim2266/csvplus)](http://goreportcard.com/report/maxim2266/csvplus)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-yellow.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
