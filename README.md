@@ -1,7 +1,7 @@
 # csvplus
 
 [![GoDoc](https://godoc.org/github.com/maxim2266/csvplus?status.svg)](https://pkg.go.dev/github.com/maxim2266/csvplus)
-[![Go report](http://goreportcard.com/badge/maxim2266/csvplus)](http://goreportcard.com/report/maxim2266/csvplus)
+[![Go Report Card](https://goreportcard.com/badge/github.com/maxim2266/csvplus)](https://goreportcard.com/report/github.com/maxim2266/csvplus)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-yellow.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 Package `csvplus` extends the standard Go [encoding/csv](https://golang.org/pkg/encoding/csv/)
