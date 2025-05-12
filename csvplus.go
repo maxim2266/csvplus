@@ -126,7 +126,7 @@ func (row Row) Select(cols ...string) (Row, error) {
 		var found bool
 
 		if r[name], found = row[name]; !found {
-			return nil, fmt.Errorf(`Missing column %q`, name)
+			return nil, fmt.Errorf(`missing column %q`, name)
 		}
 	}
 
@@ -142,7 +142,7 @@ func (row Row) SelectValues(cols ...string) ([]string, error) {
 		var found bool
 
 		if r[i], found = row[name]; !found {
-			return nil, fmt.Errorf(`Missing column %q`, name)
+			return nil, fmt.Errorf(`missing column %q`, name)
 		}
 	}
 
@@ -167,15 +167,15 @@ func (row Row) ValueAsInt(column string) (res int, err error) {
 	var found bool
 
 	if val, found = row[column]; !found {
-		err = fmt.Errorf(`Missing column %q`, column)
+		err = fmt.Errorf(`missing column %q`, column)
 		return
 	}
 
 	if res, err = strconv.Atoi(val); err != nil {
 		if e, ok := err.(*strconv.NumError); ok {
-			err = fmt.Errorf(`Column %q: Cannot convert %q to integer: %s`, column, val, e.Err)
+			err = fmt.Errorf(`column %q: cannot convert %q to integer: %s`, column, val, e.Err)
 		} else {
-			err = fmt.Errorf(`Column %q: %s`, column, err)
+			err = fmt.Errorf(`column %q: %s`, column, err)
 		}
 	}
 
@@ -189,15 +189,15 @@ func (row Row) ValueAsFloat64(column string) (res float64, err error) {
 	var found bool
 
 	if val, found = row[column]; !found {
-		err = fmt.Errorf(`Missing column %q`, column)
+		err = fmt.Errorf(`missing column %q`, column)
 		return
 	}
 
 	if res, err = strconv.ParseFloat(val, 64); err != nil {
 		if e, ok := err.(*strconv.NumError); ok {
-			err = fmt.Errorf(`Column %q: Cannot convert %q to float: %s`, column, val, e.Err)
+			err = fmt.Errorf(`column %q: cannot convert %q to float: %s`, column, val, e.Err)
 		} else {
-			err = fmt.Errorf(`Column %q: %s`, column, err.Error())
+			err = fmt.Errorf(`column %q: %s`, column, err.Error())
 		}
 	}
 
@@ -378,7 +378,7 @@ func (src DataSource) DropWhile(pred func(Row) bool) DataSource {
 // having the same number of fields, using default settings for the underlying csv.Writer.
 func (src DataSource) ToCsv(out io.Writer, columns ...string) (err error) {
 	if len(columns) == 0 {
-		panic("Empty column list in ToCsv() function")
+		panic("empty column list in ToCsv() function")
 	}
 
 	w := csv.NewWriter(out)
@@ -492,7 +492,7 @@ func (src DataSource) ToRows() (rows []Row, err error) {
 // DropColumns removes the specifies columns from each row.
 func (src DataSource) DropColumns(columns ...string) DataSource {
 	if len(columns) == 0 {
-		panic("No columns specified in DropColumns()")
+		panic("no columns specified in DropColumns()")
 	}
 
 	return func(fn RowFunc) error {
@@ -510,7 +510,7 @@ func (src DataSource) DropColumns(columns ...string) DataSource {
 // if any such column does not exist.
 func (src DataSource) SelectColumns(columns ...string) DataSource {
 	if len(columns) == 0 {
-		panic("No columns specified in SelectColumns()")
+		panic("no columns specified in SelectColumns()")
 	}
 
 	return func(fn RowFunc) error {
@@ -546,7 +546,7 @@ func (src DataSource) Join(index *Index, columns ...string) DataSource {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
-		panic("Too many source columns in Join()")
+		panic("too many source columns in Join()")
 	}
 
 	return func(fn RowFunc) error {
@@ -589,7 +589,7 @@ func (src DataSource) Except(index *Index, columns ...string) DataSource {
 	if len(columns) == 0 {
 		columns = index.impl.columns
 	} else if len(columns) > len(index.impl.columns) {
-		panic("Too many source columns in Except()")
+		panic("too many source columns in Except()")
 	}
 
 	return func(fn RowFunc) error {
@@ -631,7 +631,7 @@ func (index *Index) Find(values ...string) DataSource {
 // must be less than the number of indexed columns.
 func (index *Index) SubIndex(values ...string) *Index {
 	if len(values) >= len(index.impl.columns) {
-		panic("Too many values in SubIndex()")
+		panic("too many values in SubIndex()")
 	}
 
 	return &Index{indexImpl{
@@ -707,12 +707,12 @@ func LoadIndex(fileName string) (*Index, error) {
 func createIndex(src DataSource, columns []string) (*Index, error) {
 	switch len(columns) {
 	case 0:
-		panic("Empty column list in CreateIndex()")
+		panic("empty column list in CreateIndex()")
 	case 1:
 		// do nothing
 	default:
 		if !allColumnsUnique(columns) {
-			panic("Duplicate column name(s) in CreateIndex()")
+			panic("duplicate column name(s) in CreateIndex()")
 		}
 	}
 
@@ -722,7 +722,7 @@ func createIndex(src DataSource, columns []string) (*Index, error) {
 	if err := src(func(row Row) error {
 		for _, col := range columns {
 			if !row.HasColumn(col) {
-				return fmt.Errorf(`Missing column %q while creating an index`, col)
+				return fmt.Errorf(`missing column %q while creating an index`, col)
 			}
 		}
 
@@ -748,7 +748,7 @@ func createUniqueIndex(src DataSource, columns []string) (index *Index, err erro
 
 	for i := 1; i < len(rows); i++ {
 		if equalRows(columns, rows[i-1], rows[i]) {
-			return nil, errors.New("Duplicate value while creating unique index: " + rows[i].SelectExisting(columns...).String())
+			return nil, errors.New("duplicate value while creating unique index: " + rows[i].SelectExisting(columns...).String())
 		}
 	}
 
@@ -874,7 +874,7 @@ func (index *indexImpl) find(values []string) []Row {
 	}
 
 	if len(values) > len(index.columns) {
-		panic("Too many columns in indexImpl.find()")
+		panic("too many columns in indexImpl.find()")
 	}
 
 	// get bounds
@@ -1002,7 +1002,7 @@ func (r *Reader) AssumeHeader(spec map[string]int) *Reader {
 
 	for name, col := range spec {
 		if col < 0 {
-			panic("Header spec: Negative index for column " + name)
+			panic("header spec: negative index for column " + name)
 		}
 	}
 
@@ -1019,7 +1019,7 @@ func (r *Reader) AssumeHeader(spec map[string]int) *Reader {
 // will be found by searching the first row for the specified column name.
 func (r *Reader) ExpectHeader(spec map[string]int) *Reader {
 	if len(spec) == 0 {
-		panic("Empty header spec")
+		panic("empty header spec")
 	}
 
 	r.header = make(map[string]int, len(spec))
@@ -1038,14 +1038,14 @@ func (r *Reader) ExpectHeader(spec map[string]int) *Reader {
 // if any column name is not found.
 func (r *Reader) SelectColumns(names ...string) *Reader {
 	if len(names) == 0 {
-		panic("Empty header spec")
+		panic("empty header spec")
 	}
 
 	r.header = make(map[string]int, len(names))
 
 	for _, name := range names {
 		if _, found := r.header[name]; found {
-			panic("Header spec: Duplicate column name: " + name)
+			panic("header spec: duplicate column name: " + name)
 		}
 
 		r.header[name] = -1
@@ -1089,6 +1089,7 @@ func (r *Reader) Iterate(fn RowFunc) error {
 
 	// csv.Reader
 	reader := csv.NewReader(input)
+
 	reader.Comma = r.delimiter
 	reader.Comment = r.comment
 	reader.LazyQuotes = r.lazyQuotes
@@ -1124,7 +1125,7 @@ func (r *Reader) Iterate(fn RowFunc) error {
 			} else {
 				return &DataSourceError{
 					Line: lineNo,
-					Err:  fmt.Errorf("Column not found: %q (%d)", name, index),
+					Err:  fmt.Errorf("column not found: %q (%d)", name, index),
 				}
 			}
 		}
@@ -1153,7 +1154,7 @@ func (r *Reader) makeHeader(reader *csv.Reader) (map[string]int, error) {
 	}
 
 	if len(line) == 0 {
-		return nil, errors.New("Empty header")
+		return nil, errors.New("empty header")
 	}
 
 	if len(r.header) == 0 { // the header is not specified - get it from the first line
@@ -1175,7 +1176,8 @@ func (r *Reader) makeHeader(reader *csv.Reader) (map[string]int, error) {
 			if index == -1 || index == i {
 				header[name] = i
 			} else {
-				return nil, fmt.Errorf(`Misplaced column %q: expected at pos. %d, but found at pos. %d`, name, index, i)
+				return nil, fmt.Errorf(`misplaced column %q: expected at pos. %d, but found at pos. %d`,
+					name, index, i)
 			}
 		}
 	}
@@ -1193,10 +1195,10 @@ func (r *Reader) makeHeader(reader *csv.Reader) (map[string]int, error) {
 
 		// return error message
 		if len(list) > 1 {
-			return nil, errors.New("Columns not found: " + strings.Join(list, ", "))
+			return nil, errors.New("columns not found: " + strings.Join(list, ", "))
 		}
 
-		return nil, errors.New("Column not found: " + list[0])
+		return nil, errors.New("column not found: " + list[0])
 	}
 
 	// all done
@@ -1232,7 +1234,7 @@ type DataSourceError struct {
 
 // Error returns a human-readable error message string.
 func (e *DataSourceError) Error() string {
-	return fmt.Sprintf(`Row %d: %s`, e.Line, e.Err)
+	return fmt.Sprintf(`row %d: %s`, e.Line, e.Err)
 }
 
 // All is a predicate combinator that takes any number of other predicates and
@@ -1276,7 +1278,7 @@ func Not(pred func(Row) bool) func(Row) bool {
 // values from the specified 'match' Row.
 func Like(match Row) func(Row) bool {
 	if len(match) == 0 {
-		panic("Empty match function in Like() predicate")
+		panic("empty match row in Like() predicate")
 	}
 
 	return func(row Row) bool {

@@ -36,7 +36,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -83,12 +82,12 @@ func TestRow(t *testing.T) {
 		return
 	}
 
-	if _, e := row.Select("xxx", "zzz"); e == nil || e.Error() != `Missing column "xxx"` {
+	if _, e := row.Select("xxx", "zzz"); e == nil || e.Error() != `missing column "xxx"` {
 		t.Error("Select() test failed:", e)
 		return
 	}
 
-	if _, e := row.Select("id", "zzz"); e == nil || e.Error() != `Missing column "zzz"` {
+	if _, e := row.Select("id", "zzz"); e == nil || e.Error() != `missing column "zzz"` {
 		t.Error("Select() test failed:", e)
 		return
 	}
@@ -98,7 +97,7 @@ func TestRow(t *testing.T) {
 		return
 	}
 
-	if _, e := row.SelectValues("id", "xxx"); e == nil || e.Error() != `Missing column "xxx"` {
+	if _, e := row.SelectValues("id", "xxx"); e == nil || e.Error() != `missing column "xxx"` {
 		t.Error("SelectValues() test failed:", e)
 		return
 	}
@@ -181,12 +180,12 @@ func TestWriteFile(t *testing.T) {
 	err := anyFrom(
 		func() (e error) { tmpFileName, e = createTempFile(""); return },
 		func() (e error) { e = src.ToCsvFile(tmpFileName, peopleHeader...); return },
-		func() (e error) { file1, e = ioutil.ReadFile(tmpFileName); return },
-		func() (e error) { file2, e = ioutil.ReadFile(tempFiles["people"]); return },
+		func() (e error) { file1, e = os.ReadFile(tmpFileName); return },
+		func() (e error) { file2, e = os.ReadFile(tempFiles["people"]); return },
 	)
 
 	if err == nil {
-		if bytes.Compare(bytes.TrimSpace(file1), bytes.TrimSpace(file2)) != 0 {
+		if !bytes.Equal(bytes.TrimSpace(file1), bytes.TrimSpace(file2)) {
 			t.Error("Files do not match")
 			return
 		}
@@ -810,7 +809,7 @@ func TestErrors(t *testing.T) {
 	// invalid column name
 	err := Take(FromFile(tempFiles["people"]).SelectColumns("id", "name", "xxx"))(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), "Row 1: Column not found: xxx") {
+	if err == nil || !strings.HasSuffix(err.Error(), "row 1: column not found: xxx") {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -828,7 +827,7 @@ func TestErrors(t *testing.T) {
 
 	_, err = source.IndexOn("name", "xxx")
 
-	if err == nil || !strings.HasSuffix(err.Error(), `Missing column "xxx" while creating an index`) {
+	if err == nil || !strings.HasSuffix(err.Error(), `missing column "xxx" while creating an index`) {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -836,7 +835,7 @@ func TestErrors(t *testing.T) {
 	// unique index with duplicate keys
 	_, err = source.UniqueIndexOn("name")
 
-	if err == nil || !strings.Contains(err.Error(), "Duplicate value while creating unique index:") {
+	if err == nil || !strings.Contains(err.Error(), "duplicate value while creating unique index:") {
 		t.Error(err)
 		return
 	}
@@ -891,7 +890,7 @@ func TestErrors(t *testing.T) {
 
 	err = people(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), `Row 1: Misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
+	if err == nil || !strings.HasSuffix(err.Error(), `row 1: misplaced column "surname": expected at pos. 3, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -903,7 +902,7 @@ func TestErrors(t *testing.T) {
 
 	err = people(neverCalled)
 
-	if err == nil || !strings.HasSuffix(err.Error(), `Row 1: Misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
+	if err == nil || !strings.HasSuffix(err.Error(), `row 1: misplaced column "surname": expected at pos. 25, but found at pos. 2`) {
 		t.Error("Unexpected error:", err)
 		return
 	}
@@ -930,7 +929,7 @@ func TestNumericalConversions(t *testing.T) {
 		return
 	}
 
-	if err.Error() != `Column "string": Cannot convert "xyz" to integer: invalid syntax` {
+	if err.Error() != `column "string": cannot convert "xyz" to integer: invalid syntax` {
 		t.Error("Unexpected error message in integer conversion:", err)
 		return
 	}
@@ -952,7 +951,7 @@ func TestNumericalConversions(t *testing.T) {
 		return
 	}
 
-	if err.Error() != `Column "string": Cannot convert "xyz" to float: invalid syntax` {
+	if err.Error() != `column "string": cannot convert "xyz" to float: invalid syntax` {
 		t.Error("Unexpected error message in float conversion:", err)
 		return
 	}
@@ -1379,7 +1378,7 @@ func sortedCopy(list []string) (r []string) {
 func createTempFile(prefix string) (name string, err error) {
 	var file *os.File
 
-	if file, err = ioutil.TempFile("", prefix); err != nil {
+	if file, err = os.CreateTemp("", prefix); err != nil {
 		return
 	}
 
@@ -1446,7 +1445,7 @@ func deleteTemps() {
 func withTempFileWriter(name string, fn func(*csv.Writer) error) (err error) {
 	var file *os.File
 
-	if file, err = ioutil.TempFile("", name); err != nil {
+	if file, err = os.CreateTemp("", name); err != nil {
 		return err
 	}
 

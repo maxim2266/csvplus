@@ -17,12 +17,13 @@ database are not required, but the same time the data transformations needed sti
 
 Simple sequential processing:
 ```Go
+// create data source from "people.csv" file with selected columns
 people := csvplus.FromFile("people.csv").SelectColumns("name", "surname", "id")
 
 err := csvplus.Take(people).
-	Filter(csvplus.Like(csvplus.Row{"name": "Amelia"})).
-	Map(func(row csvplus.Row) csvplus.Row { row["name"] = "Julia"; return row }).
-	ToCsvFile("out.csv", "name", "surname")
+	Filter(csvplus.Like(csvplus.Row{"name": "Amelia"})).  // choose only this name
+	Map(func(row csvplus.Row) csvplus.Row { row["name"] = "Julia"; return row }).  // replace the name
+	ToCsvFile("out.csv", "name", "surname")  // write select columns to .csv file
 
 if err != nil {
 	return err
@@ -31,23 +32,30 @@ if err != nil {
 
 More involved example:
 ```Go
+// create data source from "people.csv" with selected columns
 customers := csvplus.FromFile("people.csv").SelectColumns("id", "name", "surname")
+// build unique index on "id" column
 custIndex, err := csvplus.Take(customers).UniqueIndexOn("id")
 
 if err != nil {
 	return err
 }
 
+// create another data source from "stock.csv" with selected columns
 products := csvplus.FromFile("stock.csv").SelectColumns("prod_id", "product", "price")
+// build unique index on "prod_id" column
 prodIndex, err := csvplus.Take(products).UniqueIndexOn("prod_id")
 
 if err != nil {
 	return err
 }
 
+// create one more data source from "orders.csv" with selected columns
 orders := csvplus.FromFile("orders.csv").SelectColumns("cust_id", "prod_id", "qty", "ts")
+// create iterator on all the above sources, joined
 iter := csvplus.Take(orders).Join(custIndex, "cust_id").Join(prodIndex)
 
+// iterate the result to produce output
 return iter(func(row csvplus.Row) error {
 	// prints lines like:
 	//	John Doe bought 38 oranges for £0.03 each on 2016-09-14T08:48:22+01:00
@@ -100,4 +108,4 @@ stored to, or loaded from a disk file.
 For more details see the [documentation](https://godoc.org/github.com/maxim2266/csvplus).
 
 ### Project status
-The project is in a usable state usually called "beta". Tested on Linux Mint 18.3 using Go version 1.10.2.
+Tested on Linux Mint 22.1 using Go version 1.24.3.
