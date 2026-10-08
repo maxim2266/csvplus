@@ -748,6 +748,11 @@ func TestResolver(t *testing.T) {
 			t.Error(err)
 			return
 		}
+
+		if len(index.impl.rows) != len(source) {
+			t.Errorf("Unexpected number of rows: %d instead of %d", len(index.impl.rows), len(source))
+			return
+		}
 	}
 }
 
