@@ -751,6 +751,94 @@ func TestResolver(t *testing.T) {
 	}
 }
 
+func TestResolveDuplicatesRetainsDistinctRows(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []string
+		want    []string
+		columns []string
+		drop    bool
+		groups  int
+	}{
+		{name: "empty"},
+		{name: "single", input: []string{"a"}, want: []string{"a"}},
+		{name: "distinct", input: []string{"c", "a", "b"}, want: []string{"a", "b", "c"}},
+		{name: "one trailing row", input: []string{"a", "a", "b"}, want: []string{"a", "b"}, groups: 1},
+		{name: "several trailing rows", input: []string{"a", "a", "b", "c"}, want: []string{"a", "b", "c"}, groups: 1},
+		{name: "leading distinct row", input: []string{"a", "b", "b", "c"}, want: []string{"a", "b", "c"}, groups: 1},
+		{name: "multiple groups", input: []string{"a", "a", "b", "c", "c", "d"}, want: []string{"a", "b", "c", "d"}, groups: 2},
+		{name: "discard groups", input: []string{"a", "a", "b", "c", "c", "d"}, want: []string{"b", "d"}, drop: true, groups: 2},
+		{name: "final duplicate group", input: []string{"a", "a", "b", "b"}, want: []string{"a", "b"}, groups: 2},
+		{name: "all duplicates", input: []string{"a", "a"}, want: []string{"a"}, groups: 1},
+		{name: "discard all", input: []string{"a", "a"}, drop: true, groups: 1},
+		{name: "composite key", input: []string{"a1", "a1", "a2"}, want: []string{"a1", "a2"}, columns: []string{"group", "key"}, groups: 1},
+		{name: "multiple composite groups", input: []string{"b2", "a1", "b1", "a1", "a2", "b1"}, want: []string{"a1", "a2", "b1", "b2"}, columns: []string{"group", "key"}, groups: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rows []Row
+			for _, key := range tt.input {
+				rows = append(rows, Row{"key": key, "group": key[:1]})
+			}
+			columns := tt.columns
+			if len(columns) == 0 {
+				columns = []string{"key"}
+			}
+			index, err := TakeRows(rows).IndexOn(columns...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			groups := 0
+			err = index.ResolveDuplicates(func(duplicates []Row) (Row, error) {
+				groups++
+				if len(duplicates) != 2 {
+					t.Fatalf("duplicate group has %d rows, want 2", len(duplicates))
+				}
+				if tt.drop {
+					return nil, nil
+				}
+				return duplicates[0], nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if groups != tt.groups {
+				t.Fatalf("resolved %d groups, want %d", groups, tt.groups)
+			}
+
+			resolved, err := Take(index).ToRows()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var keys []string
+			for _, row := range resolved {
+				keys = append(keys, row["key"])
+			}
+			if strings.Join(keys, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("resolved keys = %v, want %v", keys, tt.want)
+			}
+			if len(resolved) > 0 {
+				values, err := resolved[len(resolved)-1].SelectValues(columns...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found, err := index.Find(values...).ToRows()
+				if err != nil || len(found) != 1 || found[0]["key"] != tt.want[len(tt.want)-1] {
+					t.Fatalf("final key lookup = %v, %v", found, err)
+				}
+			}
+			if err := index.ResolveDuplicates(func([]Row) (Row, error) {
+				t.Fatal("resolver called again after duplicates were removed")
+				return nil, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestTransformedSource(t *testing.T) {
 	// cust_id, prod_id, amount
 	amounts, err := createAmountsTable()
