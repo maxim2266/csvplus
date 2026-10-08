@@ -859,6 +859,11 @@ func (index *indexImpl) dedup(resolve func(rows []Row) (Row, error)) (err error)
 		}
 	}
 
+	if lower == len(index.rows) {
+		index.rows[dest] = index.rows[lower-1]
+		dest++
+	}
+
 	if err == nil {
 		index.rows = index.rows[:dest]
 	}
